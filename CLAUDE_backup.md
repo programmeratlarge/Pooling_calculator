@@ -2,7 +2,9 @@
 
 ## Project Overview
 
-**Pooling calculator** is a utility that helps design Next-Generation Sequencing (NGS) library pools so that each library contributes the desired number of molecules to a shared sequencing run. In practice, it takes per-library concentration and size information and converts that into precise pipetting volumes, ensuring that the final pool is equimolar (or otherwise “weighted” according to user-defined targets) across all samples. Tools of this type are widely used when preparing Illumina libraries, where the goal is to build a mixed pool that has the correct overall molarity and volume for instrument loading and that yields balanced read depth per sample.
+**Pooling calculator** is a Next-Generation Sequencing (NGS) library pooling utility that calculates precise pipetting volumes to achieve equimolar (or weighted) pooling across samples. The calculator takes per-library concentration and fragment length data and computes volumes needed so each library contributes the desired number of molecules to the final sequencing pool. 
+
+In practice, it takes per-library concentration and size information and converts that into precise pipetting volumes, ensuring that the final pool is equimolar (or otherwise “weighted” according to user-defined targets) across all samples. Tools of this type are widely used when preparing Illumina libraries, where the goal is to build a mixed pool that has the correct overall molarity and volume for instrument loading and that yields balanced read depth per sample.
 
 Conceptually, the calculator automates a set of routine but error-prone dilution and mixing calculations. For each input library, a user typically provides: (1) a measured concentration (for example in ng/µl from Qubit or similar), (2) an average fragment length (from a Bioanalyzer or Fragment Analyzer trace), and sometimes (3) a directly measured molarity from qPCR or another assay. The calculator converts mass concentration into molar concentration using the fragment length, then determines how much volume of each library must be taken so that all libraries contribute the same number of molecules (equimolar pooling) or a specified proportion of the total reads. Vendor tools such as Illumina’s Pooling Calculator and similar NGS equimolar pooling calculators follow this pattern to standardize library normalization and pooling.
 
@@ -12,34 +14,80 @@ We need to build a more advanced pooling calculator that can operate on higher-l
 
 Finally, pooling calculators often provide guardrails and convenience features that make the process reproducible and auditable. These can include: unit conversions (ng/µl ↔ nM), checks for over- or under-dilution relative to instrument loading guidelines, calculation of optional spike-ins such as PhiX, and exportable tables that can feed directly into liquid-handling robots or lab protocols. By centralizing the logic of library normalization and pooling, a pooling calculator reduces manual arithmetic, minimizes variability between runs and operators, and helps ensure that sequencing reads are distributed across samples in a way that matches the experimental design.
 
+The project focuses on advanced sub-pool management, allowing users to combine pre-pooled sample groups while preserving equal representation across all underlying samples. This is critical for high-plex experiments where dozens or hundreds of libraries need balanced read depth.
+
 ### What the User Will Build
 
 The user is a programmer in a biology lab. You are working with the user to help them build the pooling calculator successfully. The user is working in Cursor (the VS Code fork), on a Windows PC. All python code is run with uv and there are uv projects in every directory that needs it. The user is familiar with uv, and docker.
 
 The user will deploy a complete app featuring:
-- **Input spreadsheet**: Contains columns for "Project ID", "Library Name", 
+- **Input spreadsheet**: 
+-- Contains columns for "Project ID", "Library Name", "Final ng/ul", "Total Volume", "Barcodes", "Adjusted peak size", "Empirical Library nM", and "Target Reads (M)"
+-- App should enable the user to load this spreadsheet, either by browsing or drag/drop
+-- App should have a text area to display error / warning messages - perform the following checks (if any checks do not pass, display error message and do not allow further processing):
+--- "Project ID" - all rows in this column must have an alphnumeric value - cannot be blank
+--- "Library Name" - all rows in this column must have a unique alphnumeric value - cannot be blank
+--- "Final ng/ul" - all rows in this column must have a float value - cannot be blank
+--- "Total Volume" - all rows in this column must have float value - cannot be blank
+--- "Barcodes" - all rows in this column must have a unique value - cannot be blank
+--- "Adjusted peak size" - all rows in this column must have a float value - cannot be blank
+--- "Empirical Library nM" - all rows in this column must have a float value or can be blank - can be blank
+--- "Target Reads (M)" - all rows in this column must have a float value - cannot be blank
 xxx
-
 ---
 
 ## Directory Structure
 
 ```
 Pooling_calculator/
-├── images/            
-└── data/             
-    └── example_pool.xlsx       
+├── images/              # (planned)
+└── data/               # (planned)
+    └── example_pool.xlsx
 ```
+
+Project is in early stages. Primary implementation will include:
+- Input spreadsheet handling (Project ID, Library Name, concentrations, fragment lengths)
+- Equimolar pooling calculations
+- Sub-pool management and merging
+- Volume and dilution calculations
+- Exportable protocols for liquid handlers
 
 ---
 
-## IMPORTANT: Working with users - approach
+### Target User Environment
+- Windows PC
+- Cursor editor (VS Code fork)
+- All Python code managed via `uv`
+- Docker available for deployment
 
-Users are on Windows PC. Always use uv for ALL python code. It is not a problem to have a uv project in a subdirectory of another uv project, although uv may show a warning.
+---
 
-Always do `uv add package` and `uv run module.py`, but NEVER `pip install xxx` and NEVER `python -c "code"` or `python -m module.py` or `python script.py`.
-It is VERY IMPORTANT that you do not use the python command outside a uv project.
-Try to lean away from shell scripts or Powershell scripts as they are platform dependent. Heavily favor writing python scripts (via uv) and managing files in the Cursor File Explorer, as this will be clear for all users.
+## Development Environment
+
+### Python Package Management
+
+**CRITICAL**: This project uses `uv` exclusively for Python package management.
+
+**Always use:**
+```bash
+uv add package_name          # Add dependencies
+uv run script.py            # Run Python scripts
+```
+
+**Never use:**
+```bash
+pip install xxx             # WRONG
+python script.py           # WRONG
+python -m module           # WRONG
+python -c "code"           # WRONG
+```
+
+**Important notes:**
+- It's acceptable to have nested uv projects (subdirectory of another uv project)
+- `uv` may show warnings about nested projects - these are usually not problems
+- Favor Python scripts over shell/PowerShell scripts for platform independence
+
+---
 
 ## Working with Users: Core Principles
 
