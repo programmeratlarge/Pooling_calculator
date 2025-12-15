@@ -10,7 +10,7 @@ The project focuses on advanced sub-pool management, allowing users to combine p
 
 You can run the pooling calculator here:
 
-👉 **[paulsinteractivecv.com](https://paulsinteractivecv.com)**
+👉 **[xxx.com](https://xxx.com)**
 
 ---
 
@@ -18,11 +18,11 @@ You can run the pooling calculator here:
 
 This repository contains the code and configuration for the pooling calculator, which:
 
-- 🗣️ **Chats with visitors** as “Paul,” answering questions in a conversational way.
-- 📄 **Serves as an interactive CV**, sharing my education, work history, publications, projects, and skills.
-- 🧠 **Uses a curated knowledge base** about my career and interests to give consistent, context-aware answers.
-- 🎯 **Helps collaborators, recruiters, and visitors** quickly understand who I am, what I do, and what I’m interested in working on.
-- 🔄 **Can be updated over time** as my experience and projects evolve, keeping my “living CV” up to date.
+- 🗣️ **xxx** xxx.
+- 📄 **xxx** xxx.
+- 🧠 **xxx** xxx.
+- 🎯 **xxx** xxx.
+- 🔄 **xxx** xxx.
 
 ---
 
