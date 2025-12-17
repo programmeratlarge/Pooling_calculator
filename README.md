@@ -10,7 +10,7 @@ The project focuses on advanced sub-pool management, allowing users to combine p
 
 You can run the pooling calculator here:
 
-👉 **[xxx.com](https://xxx.com)**
+👉 **[pooling_calculator.com](https://pooling_calculator.com)**
 
 ---
 
@@ -18,11 +18,18 @@ You can run the pooling calculator here:
 
 This repository contains the code and configuration for the pooling calculator, which:
 
-- 🗣️ **xxx** xxx.
-- 📄 **xxx** xxx.
-- 🧠 **xxx** xxx.
-- 🎯 **xxx** xxx.
-- 🔄 **xxx** xxx.
+Features (Coming Soon)
+✅ Molarity conversion (ng/µl → nM)
+🔄 Weighted pooling calculations
+🔄 Sub-pool management by project
+🔄 Excel input/output
+🔄 Comprehensive validation
+
+Technology Stack:
+🎯 Python 3.11+
+🎯 Gradio for UI
+🎯 Pandas for data processing
+🎯 Pydantic for validation
 
 ---
 
