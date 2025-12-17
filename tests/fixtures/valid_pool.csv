@@ -1,0 +1,6 @@
+Project ID,Library Name,Final ng/ul,Total Volume,Barcodes,Adjusted peak size,Empirical Library nM,Target Reads (M)
+ProjectA,Lib001,10.5,25.0,ATCGATCG,500,,100
+ProjectA,Lib002,12.3,30.0,GCTAGCTA,550,,100
+ProjectA,Lib003,8.7,20.0,TTAATTAA,480,,50
+ProjectB,Lib004,15.2,35.0,CCGGCCGG,600,,100
+ProjectB,Lib005,9.8,22.0,AACCTTGG,520,,50
