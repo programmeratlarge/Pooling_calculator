@@ -168,12 +168,17 @@ def test_compute_pool_volumes_equimolar():
     df = pd.DataFrame({
         "Library Name": ["Lib001", "Lib002"],
         "Effective nM (Use)": [10.0, 10.0],  # Same concentration
+        "Adjusted lib nM": [10.0, 10.0],  # Same as effective for this test
         "Target Reads (M)": [100, 100],  # Same target
     })
 
-    result = compute_pool_volumes(df, desired_pool_volume_ul=10.0)
+    # New formula: stock_vol = scaling_factor / adj_lib_nM * target_reads_M
+    # For equimolar with same target: stock_vol = scaling_factor / 10.0 * 100 = 10 * scaling_factor
+    # We want total = 10.0, so each gets 5.0
+    # Therefore: 10 * scaling_factor = 5.0 → scaling_factor = 0.5
+    result = compute_pool_volumes(df, scaling_factor=0.5)
 
-    # Should get equal volumes
+    # Should get equal stock volumes (before dilution)
     assert pytest.approx(result["Stock Volume (µl)"].iloc[0], rel=1e-6) == 5.0
     assert pytest.approx(result["Stock Volume (µl)"].iloc[1], rel=1e-6) == 5.0
 
@@ -187,10 +192,15 @@ def test_compute_pool_volumes_weighted_by_target():
     df = pd.DataFrame({
         "Library Name": ["Lib001", "Lib002"],
         "Effective nM (Use)": [10.0, 10.0],  # Same concentration
+        "Adjusted lib nM": [10.0, 10.0],  # Same as effective
         "Target Reads (M)": [100, 10],  # 10x difference in target
     })
 
-    result = compute_pool_volumes(df, desired_pool_volume_ul=11.0)
+    # New formula: stock_vol = scaling_factor / adj_lib_nM * target_reads_M
+    # Lib001: scaling_factor / 10 * 100 = 10 * scaling_factor
+    # Lib002: scaling_factor / 10 * 10 = 1 * scaling_factor
+    # Total: 11 * scaling_factor, want sum = 11.0, so scaling_factor = 1.0
+    result = compute_pool_volumes(df, scaling_factor=1.0)
 
     # Lib001 should get ~10x more volume than Lib002
     vol1 = result["Stock Volume (µl)"].iloc[0]
@@ -198,7 +208,7 @@ def test_compute_pool_volumes_weighted_by_target():
 
     assert pytest.approx(vol1 / vol2, rel=1e-3) == 10.0
 
-    # Volumes should sum to desired pool volume
+    # Stock volumes should sum to 11.0
     assert pytest.approx(vol1 + vol2, rel=1e-6) == 11.0
 
 
@@ -207,10 +217,15 @@ def test_compute_pool_volumes_weighted_by_concentration():
     df = pd.DataFrame({
         "Library Name": ["Lib001", "Lib002"],
         "Effective nM (Use)": [10.0, 20.0],  # 2x concentration difference
+        "Adjusted lib nM": [10.0, 20.0],  # Same as effective
         "Target Reads (M)": [100, 100],  # Same target
     })
 
-    result = compute_pool_volumes(df, desired_pool_volume_ul=15.0)
+    # New formula: stock_vol = scaling_factor / adj_lib_nM * target_reads_M
+    # Lib001: scaling_factor / 10 * 100 = 10 * scaling_factor
+    # Lib002: scaling_factor / 20 * 100 = 5 * scaling_factor
+    # Total: 15 * scaling_factor, want sum = 15.0, so scaling_factor = 1.0
+    result = compute_pool_volumes(df, scaling_factor=1.0)
 
     # Lib001 (lower conc) should get 2x more volume than Lib002 (higher conc)
     vol1 = result["Stock Volume (µl)"].iloc[0]
@@ -224,12 +239,16 @@ def test_compute_pool_volumes_insufficient_volume_flag():
     df = pd.DataFrame({
         "Library Name": ["Lib001"],
         "Effective nM (Use)": [1.0],
+        "Adjusted lib nM": [1.0],
         "Target Reads (M)": [100],
         "Total Volume": [5.0],  # Only 5 µl available
     })
 
-    # Request 10 µl pool, which would require more than 5 µl from this single library
-    result = compute_pool_volumes(df, desired_pool_volume_ul=10.0)
+    # New formula: stock_vol = scaling_factor / adj_lib_nM * target_reads_M
+    # stock_vol = 0.1 / 1.0 * 100 = 10.0 µl
+    # This is > 0.795, so pre-dilute = 1x, final_vol = 10.0 µl
+    # But we only have 5.0 µl available
+    result = compute_pool_volumes(df, scaling_factor=0.1)
 
     # Should have flag about insufficient volume
     assert "Insufficient volume" in result["Flags"].iloc[0]
@@ -240,17 +259,22 @@ def test_compute_pool_volumes_below_min_volume_flag():
     df = pd.DataFrame({
         "Library Name": ["Lib001", "Lib002"],
         "Effective nM (Use)": [1000.0, 10.0],  # Lib001 very high, Lib002 low
+        "Adjusted lib nM": [1000.0, 10.0],
         "Target Reads (M)": [1, 100],  # Lib001 low target, Lib002 high target
     })
 
+    # New formula: stock_vol = scaling_factor / adj_lib_nM * target_reads_M
+    # Lib001: 0.1 / 1000 * 1 = 0.0001 µl (very small)
+    # Lib002: 0.1 / 10 * 100 = 1.0 µl
     # Lib001 should get a very small volume (high conc, low target)
-    # Lib002 should get most of the volume (low conc, high target)
-    result = compute_pool_volumes(df, desired_pool_volume_ul=10.0, min_volume_ul=0.1)
+    # Lib002 should get reasonable volume (low conc, high target)
+    result = compute_pool_volumes(df, scaling_factor=0.1, min_volume_ul=0.1)
 
     # Lib001 should have flag about being below minimum
     assert "Below minimum pipettable volume" in result["Flags"].iloc[0]
-    # Lib002 should have no flags
-    assert result["Flags"].iloc[1] == ""
+    # Lib002 should have no flags (or only pre-dilution info)
+    flags_lib2 = result["Flags"].iloc[1]
+    assert "Below minimum pipettable volume" not in flags_lib2
 
 
 def test_compute_pool_volumes_exceeds_max_volume_flag():
@@ -258,11 +282,13 @@ def test_compute_pool_volumes_exceeds_max_volume_flag():
     df = pd.DataFrame({
         "Library Name": ["Lib001"],
         "Effective nM (Use)": [1.0],  # Very low concentration
+        "Adjusted lib nM": [1.0],
         "Target Reads (M)": [100],  # High target
     })
 
-    # This would normally require a large volume
-    result = compute_pool_volumes(df, desired_pool_volume_ul=10.0, max_volume_ul=5.0)
+    # New formula: stock_vol = 0.1 / 1.0 * 100 = 10.0 µl
+    # This exceeds max of 5.0 µl
+    result = compute_pool_volumes(df, scaling_factor=0.1, max_volume_ul=5.0)
 
     # Should have flag about exceeding maximum
     assert "Exceeds maximum volume" in result["Flags"].iloc[0]
@@ -273,26 +299,28 @@ def test_compute_pool_volumes_expected_reads():
     df = pd.DataFrame({
         "Library Name": ["Lib001", "Lib002"],
         "Effective nM (Use)": [10.0, 10.0],
+        "Adjusted lib nM": [10.0, 10.0],
         "Target Reads (M)": [100, 100],
     })
 
-    result = compute_pool_volumes(df, desired_pool_volume_ul=10.0, total_reads_m=500)
+    result = compute_pool_volumes(df, scaling_factor=0.1, total_reads_m=500)
 
     # Each library should get 50% of total reads (equimolar)
     assert pytest.approx(result["Expected Reads (M)"].iloc[0], rel=1e-6) == 250
     assert pytest.approx(result["Expected Reads (M)"].iloc[1], rel=1e-6) == 250
 
 
-def test_compute_pool_volumes_invalid_pool_volume():
-    """compute_pool_volumes should reject invalid pool volume."""
+def test_compute_pool_volumes_invalid_scaling_factor():
+    """compute_pool_volumes should reject invalid scaling factor."""
     df = pd.DataFrame({
         "Library Name": ["Lib001"],
         "Effective nM (Use)": [10.0],
+        "Adjusted lib nM": [10.0],
         "Target Reads (M)": [100],
     })
 
-    with pytest.raises(ValueError, match="Desired pool volume must be > 0"):
-        compute_pool_volumes(df, desired_pool_volume_ul=0)
+    with pytest.raises(ValueError, match="Scaling factor must be > 0"):
+        compute_pool_volumes(df, scaling_factor=0)
 
 
 def test_compute_pool_volumes_invalid_min_volume():
@@ -300,23 +328,24 @@ def test_compute_pool_volumes_invalid_min_volume():
     df = pd.DataFrame({
         "Library Name": ["Lib001"],
         "Effective nM (Use)": [10.0],
+        "Adjusted lib nM": [10.0],
         "Target Reads (M)": [100],
     })
 
     with pytest.raises(ValueError, match="Min volume must be >= 0"):
-        compute_pool_volumes(df, desired_pool_volume_ul=10.0, min_volume_ul=-1.0)
+        compute_pool_volumes(df, scaling_factor=0.1, min_volume_ul=-1.0)
 
 
 def test_compute_pool_volumes_missing_columns():
     """compute_pool_volumes should raise error if required columns missing."""
     df = pd.DataFrame({
         "Library Name": ["Lib001"],
-        # Missing "Effective nM (Use)"
+        # Missing "Adjusted lib nM"
         "Target Reads (M)": [100],
     })
 
     with pytest.raises(ValueError, match="Missing required columns"):
-        compute_pool_volumes(df, desired_pool_volume_ul=10.0)
+        compute_pool_volumes(df, scaling_factor=0.1)
 
 
 def test_compute_pool_volumes_real_data_sample():
@@ -325,29 +354,24 @@ def test_compute_pool_volumes_real_data_sample():
     df = pd.DataFrame({
         "Library Name": ["EF19", "EF20", "EF21"],
         "Effective nM (Use)": [13.595, 13.037, 12.334],
+        "Adjusted lib nM": [13.595, 13.037, 12.334],  # Same as effective for this test
         "Target Reads (M)": [100, 10, 100],
         "Total Volume": [20, 20, 20],
     })
 
-    # From data/README.md: pool_param = 0.1 (need to determine actual desired_pool_volume)
-    # Total expected volume sum from data: 18.785 µl
-    # Let's compute what the sum should be
-    v_raw_19 = 100 / 13.595
-    v_raw_20 = 10 / 13.037
-    v_raw_21 = 100 / 12.334
-    v_raw_total = v_raw_19 + v_raw_20 + v_raw_21
-
+    # From data/README.md: pool_param = 0.1, which is the scaling factor
     # Expected volumes from CSV:
     # EF19: 0.736 µl
     # EF20: 0.077 µl
     # EF21: 0.811 µl
-    # Sum: 1.624 µl
+    # These are calculated using: stock_vol = 0.1 / adj_lib_nM * target_reads_M
 
-    expected_sum = 0.736 + 0.077 + 0.811
+    result = compute_pool_volumes(df, scaling_factor=0.1)
 
-    result = compute_pool_volumes(df, desired_pool_volume_ul=expected_sum)
-
-    # Check volumes match expected (within tolerance)
+    # Check stock volumes match expected (within tolerance)
+    # EF19: 0.1 / 13.595 * 100 = 0.736
+    # EF20: 0.1 / 13.037 * 10 = 0.077
+    # EF21: 0.1 / 12.334 * 100 = 0.811
     assert pytest.approx(result["Stock Volume (µl)"].iloc[0], rel=1e-2) == 0.736
     assert pytest.approx(result["Stock Volume (µl)"].iloc[1], rel=1e-2) == 0.077
     assert pytest.approx(result["Stock Volume (µl)"].iloc[2], rel=1e-2) == 0.811

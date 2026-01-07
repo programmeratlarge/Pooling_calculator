@@ -48,16 +48,12 @@ def test_full_pipeline_with_valid_data():
     # Compute pool volumes
     df_with_volumes = compute_pool_volumes(
         df_with_molarity,
-        desired_pool_volume_ul=10.0,
+        scaling_factor=0.1,
         min_volume_ul=0.01,
     )
 
     assert "Stock Volume (µl)" in df_with_volumes.columns
     assert "Pool Fraction" in df_with_volumes.columns
-
-    # Check volume constraints
-    total_volume = df_with_volumes["Stock Volume (µl)"].sum()
-    assert pytest.approx(total_volume, rel=1e-6) == 10.0
 
     # Pool fractions should sum to 1
     total_fraction = df_with_volumes["Pool Fraction"].sum()
@@ -136,7 +132,7 @@ def test_weighted_pooling():
     df_with_molarity = compute_effective_molarity(df_normalized)
     df_with_volumes = compute_pool_volumes(
         df_with_molarity,
-        desired_pool_volume_ul=11.0,
+        scaling_factor=0.1,
     )
 
     # Libraries with 10x target reads difference should get ~10x volume difference
@@ -191,7 +187,7 @@ def test_volume_flags():
     df_with_molarity = compute_effective_molarity(df_normalized)
     df_with_volumes = compute_pool_volumes(
         df_with_molarity,
-        desired_pool_volume_ul=10.0,
+        scaling_factor=0.1,
         max_volume_ul=3.0,  # Set max constraint
     )
 
@@ -210,7 +206,7 @@ def test_project_aggregation():
     df_with_molarity = compute_effective_molarity(df_normalized)
     df_with_volumes = compute_pool_volumes(
         df_with_molarity,
-        desired_pool_volume_ul=10.0,
+        scaling_factor=0.1,
     )
 
     df_projects = summarize_by_project(df_with_volumes)
