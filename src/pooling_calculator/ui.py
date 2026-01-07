@@ -30,7 +30,7 @@ from pooling_calculator.config import (
 
 def process_upload(
     file_obj,
-    desired_pool_volume: float,
+    scaling_factor: float,
     min_volume: float,
     max_volume: float | None,
     total_reads: float | None,
@@ -40,7 +40,7 @@ def process_upload(
 
     Args:
         file_obj: Uploaded file object from Gradio
-        desired_pool_volume: Target total pool volume in µl
+        scaling_factor: Volume calculation scaling factor (controls pool volume)
         min_volume: Minimum pipettable volume in µl
         max_volume: Maximum volume per library (optional)
         total_reads: Total sequencing reads in millions (optional)
@@ -97,7 +97,7 @@ def process_upload(
 
         df_with_volumes = compute_pool_volumes(
             df_with_molarity,
-            desired_pool_volume_ul=desired_pool_volume,
+            scaling_factor=scaling_factor,
             min_volume_ul=min_volume,
             max_volume_ul=max_vol,
             total_reads_m=total_r,
@@ -125,6 +125,8 @@ def process_upload(
             "Calculated nM",
             "Effective nM (Use)",
             "Stock Volume (µl)",
+            "Pre-Dilute Factor",
+            "Final Volume (µl)",
             "Pool Fraction",
         ]
 
@@ -140,6 +142,7 @@ def process_upload(
         df_display["Calculated nM"] = df_display["Calculated nM"].round(3)
         df_display["Effective nM (Use)"] = df_display["Effective nM (Use)"].round(3)
         df_display["Stock Volume (µl)"] = df_display["Stock Volume (µl)"].round(4)
+        df_display["Final Volume (µl)"] = df_display["Final Volume (µl)"].round(4)
         df_display["Pool Fraction"] = df_display["Pool Fraction"].round(4)
 
         if "Expected Reads (M)" in df_display.columns:
@@ -160,7 +163,7 @@ def process_upload(
             pooling_params={
                 "Version": __version__,
                 "Input File": Path(file_obj.name).name,
-                "Desired Pool Volume (µl)": desired_pool_volume,
+                "Scaling Factor": scaling_factor,
                 "Min Volume (µl)": min_volume,
                 "Max Volume (µl)": max_vol if max_vol else "N/A",
                 "Total Reads (M)": total_r if total_r else "N/A",
@@ -168,7 +171,13 @@ def process_upload(
         )
 
         status_msg += f"\n✅ **Pooling plan computed successfully!**\n"
-        status_msg += f"- Total volume: {df_with_volumes['Stock Volume (µl)'].sum():.3f} µl\n"
+        status_msg += f"- Total volume to pipette: {df_with_volumes['Final Volume (µl)'].sum():.3f} µl\n"
+
+        # Count libraries requiring pre-dilution
+        pre_dilute_count = len(df_with_volumes[df_with_volumes["Pre-Dilute Factor"] > 1])
+        if pre_dilute_count > 0:
+            status_msg += f"- {pre_dilute_count} libraries require pre-dilution\n"
+
         status_msg += f"- Ready to download Excel file\n"
 
         return status_msg, df_display, df_projects_display, excel_bytes
@@ -209,6 +218,32 @@ def build_app() -> gr.Blocks:
                 )
 
                 gr.Markdown("### Global Parameters")
+
+                scaling_factor = gr.Number(
+                    label="⚙️ Scaling Factor",
+                    value=0.1,
+                    minimum=0.001,
+                    maximum=10.0,
+                    step=0.01,
+                    info="Controls volume calculation (lower = smaller volumes, higher = larger volumes)",
+                )
+
+                gr.Markdown(
+                    """
+                    <details>
+                    <summary><small>ℹ️ About Scaling Factor & Pre-dilution</small></summary>
+
+                    **Scaling Factor** adjusts the volume calculation formula to achieve your desired pool characteristics.
+
+                    **Pre-dilution** is automatically calculated when volumes are too small to pipette accurately:
+                    - If calculated volume < **0.2 µL**: Recommends **10x dilution**
+                    - If calculated volume < **0.795 µL**: Recommends **5x dilution**
+                    - Otherwise: No dilution needed
+
+                    *Pre-dilution values are informational - samples can be diluted before pooling if needed.*
+                    </details>
+                    """
+                )
 
                 desired_volume = gr.Number(
                     label="Desired Total Pool Volume (µl)",
@@ -298,7 +333,7 @@ def build_app() -> gr.Blocks:
             fn=calculate_wrapper,
             inputs=[
                 file_upload,
-                desired_volume,
+                scaling_factor,
                 min_volume,
                 max_volume,
                 total_reads,

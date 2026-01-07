@@ -115,7 +115,7 @@ def compute_effective_molarity(df: pd.DataFrame) -> pd.DataFrame:
 
 def compute_pool_volumes(
     df: pd.DataFrame,
-    desired_pool_volume_ul: float,
+    scaling_factor: float = 0.1,
     min_volume_ul: float = 0.001,
     max_volume_ul: float | None = None,
     total_reads_m: float | None = None
@@ -123,16 +123,20 @@ def compute_pool_volumes(
     """
     Calculate volumes for each library to achieve weighted pooling.
 
-    Algorithm:
-    1. For each library i: v_raw[i] = target_reads[i] / molarity[i]
-    2. Scale to desired pool volume: V[i] = v_raw[i] × (desired_volume / sum(v_raw))
-    3. Check constraints and add flags
-    4. Calculate derived metrics (pool fraction, expected reads)
+    **CORRECTED FORMULA** (based on 7050I_miRNA_pool_copy.xlsx):
+    1. Calculate stock volume: stock_vol = scaling_factor / adj_lib_nM * target_reads_M
+    2. Determine pre-dilution factor:
+       - If stock_vol < 0.2 µL: pre_dilute = 10x
+       - If stock_vol < 0.795 µL: pre_dilute = 5x
+       - Else: pre_dilute = 1x (no dilution)
+    3. Calculate final volume: final_vol = stock_vol * pre_dilute_factor
+    4. Check constraints and add flags
+    5. Calculate derived metrics (pool fraction, expected reads)
 
     Args:
         df: DataFrame with effective molarity and target reads
-        desired_pool_volume_ul: Target total volume for final pool
-        min_volume_ul: Minimum pipettable volume (default 0.001 µl = 1 nL)
+        scaling_factor: Volume scaling factor (default 0.1, from Cell AA4 in reference)
+        min_volume_ul: Minimum pipettable volume for flagging (default 0.001 µl)
         max_volume_ul: Maximum volume per library (optional)
         total_reads_m: Total sequencing reads in millions (optional, for reporting)
 
@@ -144,56 +148,90 @@ def compute_pool_volumes(
     """
     df = df.copy()
 
+    # Import thresholds from config
+    from pooling_calculator.config import (
+        PRE_DILUTE_THRESHOLD_10X,
+        PRE_DILUTE_THRESHOLD_5X,
+    )
+
     # Validate inputs
-    if desired_pool_volume_ul <= 0:
-        raise ValueError(f"Desired pool volume must be > 0, got {desired_pool_volume_ul}")
+    if scaling_factor <= 0:
+        raise ValueError(f"Scaling factor must be > 0, got {scaling_factor}")
     if min_volume_ul < 0:
         raise ValueError(f"Min volume must be >= 0, got {min_volume_ul}")
     if max_volume_ul is not None and max_volume_ul <= 0:
         raise ValueError(f"Max volume must be > 0, got {max_volume_ul}")
 
     # Validate required columns
-    required = ["Effective nM (Use)", "Target Reads (M)"]
+    required = ["Adjusted lib nM", "Target Reads (M)"]
     missing = [col for col in required if col not in df.columns]
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
 
-    # Calculate raw volume factors: v_raw[i] = target_reads[i] / molarity[i]
-    df["_v_raw"] = df["Target Reads (M)"] / df["Effective nM (Use)"]
+    # Step 1: Calculate stock volume using CORRECT formula from spreadsheet
+    # Formula: stock_vol = scaling_factor / adj_lib_nM * target_reads_M
+    # This is from Cell AF in the reference spreadsheet: =$AA$4/R*Q
+    df["Stock Volume (µl)"] = (scaling_factor / df["Adjusted lib nM"]) * df["Target Reads (M)"]
 
-    # Calculate scaling factor to achieve desired pool volume
-    v_raw_total = df["_v_raw"].sum()
-    scale_factor = desired_pool_volume_ul / v_raw_total
+    # Step 2: Determine pre-dilution factor based on stock volume
+    # Logic from Column Z in reference spreadsheet
+    # IF stock_vol < 0.2: dilute 10x
+    # ELIF stock_vol < 0.795: dilute 5x
+    # ELSE: no dilution (1x)
+    def calculate_pre_dilute_factor(stock_vol):
+        """
+        Calculate pre-dilution factor based on stock volume.
 
-    # Calculate final volumes
-    df["Stock Volume (µl)"] = df["_v_raw"] * scale_factor
+        Thresholds are configurable in config.py:
+        - PRE_DILUTE_THRESHOLD_10X = 0.2 µL (default)
+        - PRE_DILUTE_THRESHOLD_5X = 0.795 µL (default)
+        """
+        if stock_vol < PRE_DILUTE_THRESHOLD_10X:
+            return 10
+        elif stock_vol < PRE_DILUTE_THRESHOLD_5X:
+            return 5
+        else:
+            return 1
+
+    df["Pre-Dilute Factor"] = df["Stock Volume (µl)"].apply(calculate_pre_dilute_factor)
+
+    # Step 3: Calculate final volume (volume to actually pipette)
+    # Formula from Column AA: vol = stock_vol * pre_dilute_factor
+    df["Final Volume (µl)"] = df["Stock Volume (µl)"] * df["Pre-Dilute Factor"]
 
     # Initialize flags column
     df["Flags"] = ""
 
-    # Sanity checks
+    # Step 4: Validation checks and flag problematic libraries
     for idx, row in df.iterrows():
         flags = []
-        volume = row["Stock Volume (µl)"]
+        stock_vol = row["Stock Volume (µl)"]
+        final_vol = row["Final Volume (µl)"]
+        pre_dilute = row["Pre-Dilute Factor"]
 
         # Check against total available volume
         if "Total Volume" in df.columns:
             available = row["Total Volume"]
-            if volume > available:
-                flags.append(f"Insufficient volume (need {volume:.3f} µl, have {available:.3f} µl)")
+            if final_vol > available:
+                flags.append(f"Insufficient volume (need {final_vol:.3f} µl, have {available:.3f} µl)")
 
-        # Check minimum pipettable volume
-        if volume < min_volume_ul:
-            flags.append(f"Below minimum pipettable volume ({volume:.6f} µl < {min_volume_ul} µl)")
+        # Informational flag for pre-dilution
+        if pre_dilute > 1:
+            flags.append(f"Pre-dilute {pre_dilute}x recommended (stock vol {stock_vol:.3f} µl)")
+
+        # Check minimum pipettable volume (should be rare with pre-dilution)
+        if final_vol < min_volume_ul:
+            flags.append(f"Below minimum pipettable volume ({final_vol:.6f} µl < {min_volume_ul} µl)")
 
         # Check maximum volume constraint
-        if max_volume_ul is not None and volume > max_volume_ul:
-            flags.append(f"Exceeds maximum volume ({volume:.3f} µl > {max_volume_ul} µl)")
+        if max_volume_ul is not None and final_vol > max_volume_ul:
+            flags.append(f"Exceeds maximum volume ({final_vol:.3f} µl > {max_volume_ul} µl)")
 
         df.at[idx, "Flags"] = "; ".join(flags)
 
-    # Calculate pool fraction: f[i] = (V[i] * C[i]) / sum(V[j] * C[j])
-    df["_mol_contribution"] = df["Stock Volume (µl)"] * df["Effective nM (Use)"]
+    # Step 5: Calculate pool fraction: f[i] = (V[i] * C[i]) / sum(V[j] * C[j])
+    # Use stock volume (before dilution) for pool fraction calculation
+    df["_mol_contribution"] = df["Stock Volume (µl)"] * df["Adjusted lib nM"]
     total_mol = df["_mol_contribution"].sum()
     df["Pool Fraction"] = df["_mol_contribution"] / total_mol
 
@@ -202,7 +240,7 @@ def compute_pool_volumes(
         df["Expected Reads (M)"] = df["Pool Fraction"] * total_reads_m
 
     # Clean up temporary columns
-    df = df.drop(columns=["_v_raw", "_mol_contribution"])
+    df = df.drop(columns=["_mol_contribution"])
 
     return df
 

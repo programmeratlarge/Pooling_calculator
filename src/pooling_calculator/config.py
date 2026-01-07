@@ -31,6 +31,35 @@ DEFAULT_POOL_VOLUME_UL: Final[float] = 50.0
 DEFAULT_SHEET_NAME: Final[str | None] = None
 
 # ============================================================================
+# Volume Calculation Parameters (Based on 7050I_miRNA_pool_copy.xlsx)
+# ============================================================================
+
+# Scaling factor for volume calculation (Cell AA4 in reference spreadsheet)
+# Formula: stock_vol = scaling_factor / adj_lib_nM * target_reads_M
+# Lower values = smaller volumes, Higher values = larger volumes
+# Typical range: 0.05 - 0.5
+DEFAULT_SCALING_FACTOR: Final[float] = 0.1
+
+# Pre-dilution thresholds (Column Z logic in reference spreadsheet)
+# These thresholds determine when samples need to be diluted before pipetting
+# to ensure volumes are large enough for accurate pipetting
+
+# IMPORTANT: These values are instrument-specific and may need adjustment
+# based on your pipette accuracy specifications. Consult your lab's SOPs.
+
+# If calculated stock volume < 0.2 µL: recommend 10x dilution
+# This threshold is based on typical pipette accuracy limits
+PRE_DILUTE_THRESHOLD_10X: Final[float] = 0.2
+
+# If calculated stock volume < 0.795 µL: recommend 5x dilution
+# Intermediate threshold for volumes that are pipettable but near the limit
+PRE_DILUTE_THRESHOLD_5X: Final[float] = 0.795
+
+# Absolute minimum pipettable volume (informational, for warnings)
+# Volumes below this are generally not accurate even with best practices
+ABSOLUTE_MIN_PIPETTABLE_VOLUME_UL: Final[float] = 0.08
+
+# ============================================================================
 # Input Column Names (Case-Insensitive Matching)
 # ============================================================================
 
@@ -128,10 +157,13 @@ OUTPUT_LIBRARY_COLUMNS: Final[list[str]] = [
     "Adjusted peak size",
     "Empirical Library nM",
     "Calculated nM",
-    "Effective nM",
+    "Effective nM (Use)",
+    "Adjusted lib nM",
     "Target Reads (M)",
-    "Volume to Add (µl)",
-    "Pool Fraction (%)",
+    "Stock Volume (µl)",
+    "Pre-Dilute Factor",
+    "Final Volume (µl)",
+    "Pool Fraction",
     "Expected Reads (M)",
     "Flags",
 ]
