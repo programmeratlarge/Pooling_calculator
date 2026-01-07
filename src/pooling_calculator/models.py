@@ -373,7 +373,7 @@ class PoolingStageData(BaseModel):
     output_count: int = Field(..., gt=0, description="Number of outputs created")
 
     # Calculated results for this stage
-    volumes_df_json: dict[str, Any] = Field(..., description="DataFrame with volumes as JSON")
+    volumes_df_json: list[dict[str, Any]] = Field(..., description="DataFrame with volumes as JSON (records format)")
     total_pipetting_steps: int = Field(..., ge=0, description="Total number of pipetting operations")
 
     # Stage-specific metadata
