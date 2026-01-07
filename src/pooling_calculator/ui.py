@@ -84,8 +84,8 @@ def process_upload(
         df_with_molarity = compute_effective_molarity(df_normalized)
 
         # Validate pool parameters
-        if desired_pool_volume <= 0:
-            return "❌ Error: Desired pool volume must be > 0", None, None, None
+        if scaling_factor <= 0:
+            return "❌ Error: Scaling factor must be > 0", None, None, None
         if min_volume < 0:
             return "❌ Error: Minimum volume must be >= 0", None, None, None
         if max_volume is not None and max_volume <= 0:
