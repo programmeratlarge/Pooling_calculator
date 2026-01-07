@@ -325,7 +325,7 @@ class SubPoolRecord(BaseModel):
     """
 
     subpool_id: str = Field(..., min_length=1, description="Unique identifier for this sub-pool")
-    member_libraries: list[str] = Field(..., min_items=1, description="Library names in this sub-pool")
+    member_libraries: list[str] = Field(..., min_length=1, description="Library names in this sub-pool")
     calculated_nm: float = Field(..., gt=0, description="Effective molarity after pooling (nM)")
     total_volume_ul: float = Field(..., gt=0, description="Total volume of this sub-pool (µl)")
     target_reads_m: float = Field(..., gt=0, description="Sum of target reads from member libraries (M)")
@@ -406,7 +406,7 @@ class HierarchicalPoolingPlan(BaseModel):
     including all stages from libraries to final master pool.
     """
 
-    stages: list[PoolingStageData] = Field(..., min_items=1, description="Ordered list of pooling stages")
+    stages: list[PoolingStageData] = Field(..., min_length=1, description="Ordered list of pooling stages")
     final_pool_volume_ul: float = Field(..., gt=0, description="Final master pool volume (µl)")
     total_libraries: int = Field(..., gt=0, description="Total number of input libraries")
     total_subpools: int = Field(..., ge=0, description="Total number of intermediate sub-pools")
