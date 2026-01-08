@@ -20,7 +20,108 @@ from pooling_calculator.compute import compute_pool_volumes
 from pooling_calculator.config import (
     PRE_DILUTE_THRESHOLD_10X,
     PRE_DILUTE_THRESHOLD_5X,
+    MAX_LIBRARIES_PER_POOL,
+    MIN_SUBPOOLS_FOR_HIERARCHICAL,
+    HIERARCHICAL_GROUPING_COLUMNS,
+    DEFAULT_MAX_LIBRARIES_PER_SUBPOOL,
 )
+
+
+# ============================================================================
+# Strategy Selection
+# ============================================================================
+
+
+def determine_pooling_strategy(
+    df: pd.DataFrame,
+    max_libraries_per_pool: int = MAX_LIBRARIES_PER_POOL,
+    min_subpools_for_hierarchical: int = MIN_SUBPOOLS_FOR_HIERARCHICAL,
+) -> tuple[str, list[str], dict[str, any]]:
+    """
+    Decide if hierarchical pooling is needed based on library count and grouping.
+
+    This function analyzes the input DataFrame to recommend the optimal pooling
+    strategy (single-stage vs. hierarchical) and suggests grouping columns.
+
+    Args:
+        df: DataFrame with library data (must include columns for analysis)
+        max_libraries_per_pool: Maximum libraries per single pool (default: 96)
+        min_subpools_for_hierarchical: Minimum sub-pools to justify hierarchical (default: 5)
+
+    Returns:
+        Tuple of (strategy, grouping_options, analysis):
+        - strategy: "single_stage" or "hierarchical"
+        - grouping_options: List of suggested column names for sub-pool grouping
+        - analysis: Dict with analysis details (total_libraries, num_projects, etc.)
+
+    Logic:
+        1. If total libraries <= max_libraries_per_pool → "single_stage"
+        2. Check each potential grouping column (e.g., "Project ID"):
+           - Count unique groups
+           - If groups >= min_subpools_for_hierarchical → "hierarchical"
+        3. Return best strategy and recommended grouping column(s)
+
+    Example:
+        >>> df = pd.DataFrame({"Project ID": ["A"]*50 + ["B"]*60, ...})
+        >>> strategy, columns, analysis = determine_pooling_strategy(df)
+        >>> strategy
+        'hierarchical'
+        >>> columns
+        ['Project ID']
+        >>> analysis
+        {'total_libraries': 110, 'num_projects': 2, 'recommended': True}
+    """
+    total_libraries = len(df)
+
+    # Analysis results
+    analysis = {
+        "total_libraries": total_libraries,
+        "max_libraries_per_pool": max_libraries_per_pool,
+    }
+
+    # Strategy 1: Small experiment → single-stage
+    if total_libraries <= max_libraries_per_pool:
+        analysis["reason"] = "Small experiment (<=96 libraries)"
+        analysis["recommended"] = False
+        return "single_stage", [], analysis
+
+    # Strategy 2: Analyze potential grouping columns
+    grouping_options = []
+
+    for col in HIERARCHICAL_GROUPING_COLUMNS:
+        if col not in df.columns:
+            continue
+
+        # Count unique groups
+        unique_groups = df[col].nunique()
+        analysis[f"{col}_num_groups"] = unique_groups
+
+        # Check if this column creates enough sub-pools
+        if unique_groups >= min_subpools_for_hierarchical:
+            grouping_options.append(col)
+            analysis[f"{col}_viable"] = True
+        else:
+            analysis[f"{col}_viable"] = False
+
+    # Decision logic
+    if len(grouping_options) > 0:
+        # Hierarchical pooling is viable and recommended
+        analysis["reason"] = (
+            f"Large experiment ({total_libraries} libraries) with natural grouping"
+        )
+        analysis["recommended"] = True
+        return "hierarchical", grouping_options, analysis
+    else:
+        # Large experiment but no good grouping column
+        # Still recommend hierarchical with custom/manual grouping
+        analysis["reason"] = (
+            f"Large experiment ({total_libraries} libraries) requires hierarchical approach"
+        )
+        analysis["recommended"] = True
+        analysis["warning"] = (
+            "No natural grouping column found. Consider adding 'Project ID' or use custom grouping."
+        )
+        return "hierarchical", [], analysis
 
 
 # ============================================================================

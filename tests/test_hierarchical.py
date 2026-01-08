@@ -9,6 +9,7 @@ import pandas as pd
 from datetime import datetime
 
 from pooling_calculator.hierarchical import (
+    determine_pooling_strategy,
     create_subpool_definitions,
     compute_subpool_properties,
     compute_hierarchical_pooling,
@@ -18,6 +19,150 @@ from pooling_calculator.models import (
     HierarchicalPoolingPlan,
     PoolingStage,
 )
+
+
+# ============================================================================
+# Test determine_pooling_strategy
+# ============================================================================
+
+
+def test_determine_pooling_strategy_small_experiment():
+    """Test that small experiments recommend single-stage."""
+    # Create 50 libraries (< 96)
+    df = pd.DataFrame({
+        "Project ID": ["ProjA"] * 30 + ["ProjB"] * 20,
+        "Library Name": [f"Lib{i:03d}" for i in range(50)],
+    })
+
+    strategy, grouping_options, analysis = determine_pooling_strategy(df)
+
+    assert strategy == "single_stage"
+    assert len(grouping_options) == 0
+    assert analysis["total_libraries"] == 50
+    assert analysis["recommended"] == False
+    assert "Small experiment" in analysis["reason"]
+
+
+def test_determine_pooling_strategy_large_with_good_grouping():
+    """Test that large experiments with good grouping recommend hierarchical."""
+    # Create 200 libraries across 8 projects
+    df = pd.DataFrame({
+        "Project ID": [f"Proj{chr(65+i//25)}" for i in range(200)],
+        "Library Name": [f"Lib{i:03d}" for i in range(200)],
+    })
+
+    strategy, grouping_options, analysis = determine_pooling_strategy(df)
+
+    assert strategy == "hierarchical"
+    assert "Project ID" in grouping_options
+    assert analysis["total_libraries"] == 200
+    assert analysis["recommended"] == True
+    assert analysis["Project ID_num_groups"] == 8
+    assert analysis["Project ID_viable"] == True
+
+
+def test_determine_pooling_strategy_large_no_grouping_column():
+    """Test large experiment without grouping column still recommends hierarchical."""
+    # Create 150 libraries without "Project ID" column
+    df = pd.DataFrame({
+        "Library Name": [f"Lib{i:03d}" for i in range(150)],
+    })
+
+    strategy, grouping_options, analysis = determine_pooling_strategy(df)
+
+    assert strategy == "hierarchical"
+    assert len(grouping_options) == 0  # No viable grouping columns
+    assert analysis["total_libraries"] == 150
+    assert analysis["recommended"] == True
+    assert "warning" in analysis
+    assert "No natural grouping column" in analysis["warning"]
+
+
+def test_determine_pooling_strategy_large_insufficient_groups():
+    """Test large experiment with too few groups."""
+    # Create 150 libraries across only 3 projects (< 5 threshold)
+    df = pd.DataFrame({
+        "Project ID": [f"Proj{chr(65+i//50)}" for i in range(150)],
+        "Library Name": [f"Lib{i:03d}" for i in range(150)],
+    })
+
+    strategy, grouping_options, analysis = determine_pooling_strategy(df)
+
+    assert strategy == "hierarchical"  # Still recommend hierarchical for large experiments
+    assert len(grouping_options) == 0  # But Project ID not viable (only 3 groups)
+    assert analysis["total_libraries"] == 150
+    assert analysis["recommended"] == True
+    assert analysis["Project ID_num_groups"] == 3
+    assert analysis["Project ID_viable"] == False
+
+
+def test_determine_pooling_strategy_exactly_at_threshold():
+    """Test experiment exactly at 96 libraries (edge case)."""
+    df = pd.DataFrame({
+        "Project ID": ["ProjA"] * 96,
+        "Library Name": [f"Lib{i:03d}" for i in range(96)],
+    })
+
+    strategy, grouping_options, analysis = determine_pooling_strategy(df)
+
+    # Exactly 96 should be single-stage (not over threshold)
+    assert strategy == "single_stage"
+    assert len(grouping_options) == 0
+    assert analysis["total_libraries"] == 96
+
+
+def test_determine_pooling_strategy_just_over_threshold():
+    """Test experiment just over 96 libraries."""
+    # Create 97 libraries across 5 projects
+    df = pd.DataFrame({
+        "Project ID": [f"Proj{chr(65+i//20)}" for i in range(97)],
+        "Library Name": [f"Lib{i:03d}" for i in range(97)],
+    })
+
+    strategy, grouping_options, analysis = determine_pooling_strategy(df)
+
+    # Just over 96 should recommend hierarchical
+    assert strategy == "hierarchical"
+    assert "Project ID" in grouping_options
+    assert analysis["total_libraries"] == 97
+    assert analysis["recommended"] == True
+
+
+def test_determine_pooling_strategy_custom_thresholds():
+    """Test with custom max_libraries_per_pool threshold."""
+    # Create 60 libraries (normally single-stage)
+    df = pd.DataFrame({
+        "Project ID": ["ProjA"] * 60,
+        "Library Name": [f"Lib{i:03d}" for i in range(60)],
+    })
+
+    # With custom threshold of 48, should recommend hierarchical
+    strategy, grouping_options, analysis = determine_pooling_strategy(
+        df,
+        max_libraries_per_pool=48,
+        min_subpools_for_hierarchical=1  # Lower threshold for testing
+    )
+
+    assert strategy == "hierarchical"
+    assert analysis["max_libraries_per_pool"] == 48
+
+
+def test_determine_pooling_strategy_analysis_details():
+    """Test that analysis dict contains expected details."""
+    df = pd.DataFrame({
+        "Project ID": [f"Proj{chr(65+i//50)}" for i in range(200)],
+        "Library Name": [f"Lib{i:03d}" for i in range(200)],
+    })
+
+    strategy, grouping_options, analysis = determine_pooling_strategy(df)
+
+    # Check that analysis dict has expected keys
+    assert "total_libraries" in analysis
+    assert "max_libraries_per_pool" in analysis
+    assert "reason" in analysis
+    assert "recommended" in analysis
+    assert "Project ID_num_groups" in analysis
+    assert "Project ID_viable" in analysis
 
 
 # ============================================================================
