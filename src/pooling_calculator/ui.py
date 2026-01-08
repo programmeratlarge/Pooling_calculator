@@ -22,34 +22,30 @@ from pooling_calculator.compute import (
     compute_pool_volumes,
     summarize_by_project,
 )
+from pooling_calculator.hierarchical import (
+    determine_pooling_strategy,
+    compute_hierarchical_pooling,
+)
 from pooling_calculator.config import (
     MIN_TOTAL_VOLUME_UL,
     WARN_LOW_TOTAL_VOLUME_UL,
 )
 
 
-def process_upload(
+def analyze_file(
     file_obj,
-    scaling_factor: float,
-    min_volume: float,
-    max_volume: float | None,
-    total_reads: float | None,
-) -> tuple[str, pd.DataFrame | None, pd.DataFrame | None, bytes | None]:
+) -> tuple[str, pd.DataFrame | None, str, list[str], dict]:
     """
-    Process uploaded file and compute pooling plan.
+    Analyze uploaded file and recommend pooling strategy.
 
     Args:
         file_obj: Uploaded file object from Gradio
-        scaling_factor: Volume calculation scaling factor (controls pool volume)
-        min_volume: Minimum pipettable volume in µl
-        max_volume: Maximum volume per library (optional)
-        total_reads: Total sequencing reads in millions (optional)
 
     Returns:
-        Tuple of (status_message, library_df, project_df, excel_bytes)
+        Tuple of (status_message, validated_df, recommended_strategy, grouping_options, analysis)
     """
     if file_obj is None:
-        return "Please upload a file first.", None, None, None
+        return "Please upload a file first.", None, "single_stage", [], {}
 
     try:
         # Load spreadsheet
@@ -68,7 +64,7 @@ def process_upload(
                 error_msg += f"\n**Warnings ({len(validation_result.warnings)}):**\n"
                 for warn in validation_result.warnings:
                     error_msg += f"- {warn}\n"
-            return error_msg, None, None, None
+            return error_msg, None, "single_stage", [], {}
 
         # Build status message with warnings
         status_msg = f"✅ **VALIDATION PASSED**\n\n"
@@ -80,20 +76,171 @@ def process_upload(
             for warn in validation_result.warnings:
                 status_msg += f"- {warn}\n"
 
+        # Analyze pooling strategy
+        strategy, grouping_options, analysis = determine_pooling_strategy(df_normalized)
+
+        status_msg += f"\n\n## 📊 Pooling Strategy Analysis\n\n"
+        status_msg += f"**Total Libraries:** {analysis['total_libraries']}\n\n"
+
+        if strategy == "hierarchical":
+            status_msg += f"**Recommendation:** ✨ **Hierarchical Pooling** (Multi-stage)\n\n"
+            status_msg += f"**Reason:** {analysis['reason']}\n\n"
+            if grouping_options:
+                status_msg += f"**Suggested Grouping:** {', '.join(grouping_options)}\n"
+                for col in grouping_options:
+                    num_groups = analysis.get(f"{col}_num_groups", 0)
+                    status_msg += f"  - {col}: {num_groups} sub-pools\n"
+            else:
+                status_msg += f"⚠️ {analysis.get('warning', 'Consider adding grouping column')}\n"
+        else:
+            status_msg += f"**Recommendation:** ✅ **Single-Stage Pooling**\n\n"
+            status_msg += f"**Reason:** {analysis['reason']}\n\n"
+
+        status_msg += f"\n📋 Configure parameters below and click **Calculate** to proceed."
+
+        return status_msg, df_normalized, strategy, grouping_options, analysis
+
+    except Exception as e:
+        error_msg = f"❌ **ERROR**: {str(e)}\n\n"
+        error_msg += "Please check your input file format and try again."
+        import traceback
+        error_msg += f"\n\nDetails:\n{traceback.format_exc()}"
+        return error_msg, None, "single_stage", [], {}
+
+
+def process_upload(
+    file_obj,
+    strategy_choice: str,
+    grouping_column: str,
+    scaling_factor: float,
+    min_volume: float,
+    max_volume: float | None,
+    total_reads: float | None,
+    validated_df: pd.DataFrame | None,
+) -> tuple[str, pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None, bytes | None]:
+    """
+    Process uploaded file and compute pooling plan based on selected strategy.
+
+    Args:
+        file_obj: Uploaded file object from Gradio
+        strategy_choice: "single_stage" or "hierarchical"
+        grouping_column: Column to group by for hierarchical pooling
+        scaling_factor: Volume calculation scaling factor (controls pool volume)
+        min_volume: Minimum pipettable volume in µl
+        max_volume: Maximum volume per library (optional)
+        total_reads: Total sequencing reads in millions (optional)
+        validated_df: Pre-validated DataFrame from analyze_file()
+
+    Returns:
+        Tuple of (status_message, library_df, project_df, stage1_df, stage2_df, excel_bytes)
+    """
+    if file_obj is None or validated_df is None:
+        return "Please upload a file and analyze it first.", None, None, None, None, None
+
+    try:
+        df_normalized = validated_df.copy()
+
         # Compute molarity
         df_with_molarity = compute_effective_molarity(df_normalized)
 
         # Validate pool parameters
         if scaling_factor <= 0:
-            return "❌ Error: Scaling factor must be > 0", None, None, None
+            return "❌ Error: Scaling factor must be > 0", None, None, None, None, None
         if min_volume < 0:
-            return "❌ Error: Minimum volume must be >= 0", None, None, None
+            return "❌ Error: Minimum volume must be >= 0", None, None, None, None, None
         if max_volume is not None and max_volume <= 0:
-            return "❌ Error: Maximum volume must be > 0", None, None, None
+            return "❌ Error: Maximum volume must be > 0", None, None, None, None, None
 
-        # Compute pool volumes
         max_vol = max_volume if max_volume and max_volume > 0 else None
         total_r = total_reads if total_reads and total_reads > 0 else None
+
+        # Branch: Single-stage or Hierarchical
+        if strategy_choice == "hierarchical":
+            # ========== HIERARCHICAL POOLING ==========
+            try:
+                plan = compute_hierarchical_pooling(
+                    df_with_molarity,
+                    grouping_column=grouping_column,
+                    scaling_factor=scaling_factor,
+                    final_pool_volume_ul=20.0,  # Could be a parameter
+                    min_volume_ul=min_volume,
+                    max_volume_ul=max_vol,
+                    total_reads_m=total_r,
+                )
+
+                # Extract Stage 1 and Stage 2 DataFrames
+                stage1_df = pd.DataFrame(plan.stages[0].volumes_df_json)
+                stage2_df = pd.DataFrame(plan.stages[1].volumes_df_json)
+
+                # Build status message
+                status_msg = "✅ **HIERARCHICAL POOLING COMPLETE**\n\n"
+                status_msg += f"**Strategy:** Multi-stage pooling\n"
+                status_msg += f"**Grouping:** {plan.grouping_method}\n\n"
+
+                status_msg += f"### Stage 1: {plan.stages[0].description}\n"
+                status_msg += f"- Input: {plan.stages[0].input_count} libraries\n"
+                status_msg += f"- Output: {plan.stages[0].output_count} sub-pools\n"
+                status_msg += f"- Pipetting steps: {plan.stages[0].total_pipetting_steps}\n\n"
+
+                status_msg += f"### Stage 2: {plan.stages[1].description}\n"
+                status_msg += f"- Input: {plan.stages[1].input_count} sub-pools\n"
+                status_msg += f"- Output: {plan.stages[1].output_count} master pool\n"
+                status_msg += f"- Pipetting steps: {plan.stages[1].total_pipetting_steps}\n\n"
+
+                status_msg += f"**Total pipetting steps:** {plan.total_pipetting_steps}\n"
+                status_msg += f"**Final pool volume:** {plan.final_pool_volume_ul} µl\n\n"
+
+                status_msg += "✅ Ready to download hierarchical pooling plan"
+
+                # Format Stage 1 for display
+                display_cols_stage1 = [
+                    "Library Name",
+                    "SubPool ID",
+                    "Calculated nM",
+                    "Effective nM (Use)",
+                    "Stock Volume (µl)",
+                    "Final Volume (µl)",
+                    "Pool Fraction",
+                ]
+                stage1_display = stage1_df[
+                    [col for col in display_cols_stage1 if col in stage1_df.columns]
+                ].copy()
+
+                # Round numeric columns
+                for col in stage1_display.select_dtypes(include=['float64', 'float32']).columns:
+                    stage1_display[col] = stage1_display[col].round(4)
+
+                # Format Stage 2 for display
+                display_cols_stage2 = [
+                    "Library Name",  # This is subpool ID in stage 2
+                    "Calculated nM",
+                    "Effective nM (Use)",
+                    "Final Volume (µl)",
+                    "Pool Fraction",
+                ]
+                stage2_display = stage2_df[
+                    [col for col in display_cols_stage2 if col in stage2_df.columns]
+                ].copy()
+
+                # Round numeric columns
+                for col in stage2_display.select_dtypes(include=['float64', 'float32']).columns:
+                    stage2_display[col] = stage2_display[col].round(4)
+
+                # No project summary for hierarchical (sub-pools replace projects)
+                # TODO: Export hierarchical results to Excel
+                excel_bytes = None
+
+                return status_msg, stage1_display, None, stage1_display, stage2_display, excel_bytes
+
+            except Exception as e:
+                error_msg = f"❌ **HIERARCHICAL POOLING ERROR**: {str(e)}\n\n"
+                error_msg += "Falling back to single-stage pooling."
+                import traceback
+                error_msg += f"\n\nDetails:\n{traceback.format_exc()}"
+                # Fall through to single-stage
+
+        # ========== SINGLE-STAGE POOLING ==========
+        status_msg = "✅ **SINGLE-STAGE POOLING COMPLETE**\n\n"
 
         df_with_volumes = compute_pool_volumes(
             df_with_molarity,
@@ -180,14 +327,14 @@ def process_upload(
 
         status_msg += f"- Ready to download Excel file\n"
 
-        return status_msg, df_display, df_projects_display, excel_bytes
+        return status_msg, df_display, df_projects_display, None, None, excel_bytes
 
     except Exception as e:
         error_msg = f"❌ **ERROR**: {str(e)}\n\n"
         error_msg += "Please check your input file format and try again."
         import traceback
         error_msg += f"\n\nDetails:\n{traceback.format_exc()}"
-        return error_msg, None, None, None
+        return error_msg, None, None, None, None, None
 
 
 def build_app() -> gr.Blocks:
@@ -362,7 +509,7 @@ def build_app() -> gr.Blocks:
             """
         )
 
-        # Top Row: Input Section (File Upload + Parameters)
+        # Top Row: Input Section (File Upload + Strategy Analysis)
         with gr.Row():
             with gr.Column(scale=1):
                 gr.Markdown("## 📁 Input")
@@ -373,6 +520,32 @@ def build_app() -> gr.Blocks:
                     type="filepath",
                 )
 
+                analyze_btn = gr.Button(
+                    "🔍 Analyze File & Recommend Strategy",
+                    variant="primary",
+                    size="lg",
+                )
+
+            with gr.Column(scale=1):
+                gr.Markdown("## 🎯 Pooling Strategy")
+
+                strategy_radio = gr.Radio(
+                    choices=["single_stage", "hierarchical"],
+                    value="single_stage",
+                    label="Select Pooling Strategy",
+                    info="Choose single-stage (all libraries at once) or hierarchical (libraries → sub-pools → master)",
+                )
+
+                grouping_dropdown = gr.Dropdown(
+                    choices=["Project ID"],
+                    value="Project ID",
+                    label="Grouping Column (for Hierarchical)",
+                    visible=False,
+                    info="Column to group libraries into sub-pools",
+                )
+
+        # Second Row: Global Parameters
+        with gr.Row():
             with gr.Column(scale=1):
                 gr.Markdown("## ⚙️ Global Parameters")
 
@@ -434,10 +607,14 @@ def build_app() -> gr.Blocks:
                     info="Expected total reads for the sequencing run (for reporting)",
                 )
 
+            with gr.Column(scale=1):
+                gr.Markdown("## 🔧 Actions")
+
                 calculate_btn = gr.Button(
                     "🧮 Calculate Pooling Plan",
                     variant="primary",
                     size="lg",
+                    interactive=False,
                 )
 
         # Middle Row: Status and Results
@@ -463,30 +640,114 @@ def build_app() -> gr.Blocks:
                 with gr.Tabs():
                     with gr.Tab("📋 Library-Level Results"):
                         library_table = gr.DataFrame(
-                            label="Pooling Plan per Library",
+                            label="Pooling Plan per Library (Single-Stage) or Stage 1 (Hierarchical)",
                             wrap=True,
                         )
 
                     with gr.Tab("📦 Project Summary"):
                         project_table = gr.DataFrame(
-                            label="Aggregated by Project",
+                            label="Aggregated by Project (Single-Stage Only)",
                             wrap=True,
                         )
 
-        # Hidden state to store Excel bytes
+                    with gr.Tab("🔸 Stage 1: Libraries → Sub-Pools"):
+                        stage1_table = gr.DataFrame(
+                            label="Stage 1 Pooling Volumes (Hierarchical)",
+                            wrap=True,
+                            visible=False,
+                        )
+
+                    with gr.Tab("🔹 Stage 2: Sub-Pools → Master"):
+                        stage2_table = gr.DataFrame(
+                            label="Stage 2 Pooling Volumes (Hierarchical)",
+                            wrap=True,
+                            visible=False,
+                        )
+
+        # Hidden states
         excel_state = gr.State(value=None)
+        validated_df_state = gr.State(value=None)
+        recommended_strategy_state = gr.State(value="single_stage")
+        grouping_options_state = gr.State(value=[])
+        analysis_state = gr.State(value={})
+
+        # Wire up the analyze button
+        def analyze_wrapper(file_obj):
+            status, df, strategy, grouping_opts, analysis = analyze_file(file_obj)
+
+            # Enable calculate button and update strategy selection
+            show_grouping = strategy == "hierarchical" and len(grouping_opts) > 0
+
+            return (
+                status,
+                df,
+                strategy,
+                grouping_opts,
+                analysis,
+                gr.update(interactive=True),  # Enable calculate button
+                gr.update(value=strategy),  # Update strategy radio
+                gr.update(choices=grouping_opts if grouping_opts else ["Project ID"], visible=show_grouping),  # Update grouping dropdown
+            )
+
+        analyze_btn.click(
+            fn=analyze_wrapper,
+            inputs=[file_upload],
+            outputs=[
+                status_output,
+                validated_df_state,
+                recommended_strategy_state,
+                grouping_options_state,
+                analysis_state,
+                calculate_btn,
+                strategy_radio,
+                grouping_dropdown,
+            ],
+        )
+
+        # Show/hide grouping dropdown based on strategy selection
+        def update_grouping_visibility(strategy):
+            return gr.update(visible=(strategy == "hierarchical"))
+
+        strategy_radio.change(
+            fn=update_grouping_visibility,
+            inputs=[strategy_radio],
+            outputs=[grouping_dropdown],
+        )
 
         # Wire up the calculate button
-        def calculate_wrapper(*args):
-            status, lib_df, proj_df, excel_bytes = process_upload(*args)
+        def calculate_wrapper(
+            file_obj,
+            strategy,
+            grouping,
+            scaling,
+            min_vol,
+            max_vol,
+            total_r,
+            validated_df,
+        ):
+            status, lib_df, proj_df, stage1_df, stage2_df, excel_bytes = process_upload(
+                file_obj,
+                strategy,
+                grouping,
+                scaling,
+                min_vol,
+                max_vol,
+                total_r,
+                validated_df,
+            )
 
             # Show download button if successful
             show_download = excel_bytes is not None
 
+            # Show hierarchical tabs if hierarchical strategy
+            show_hierarchical = strategy == "hierarchical" and stage1_df is not None
+
             return (
                 status,
-                lib_df,
-                proj_df,
+                lib_df if lib_df is not None else gr.update(),
+                proj_df if proj_df is not None else gr.update(),
+                stage1_df if stage1_df is not None else gr.update(),
+                stage2_df if stage2_df is not None else gr.update(),
                 excel_bytes,
                 gr.update(visible=show_download),
             )
@@ -495,15 +756,20 @@ def build_app() -> gr.Blocks:
             fn=calculate_wrapper,
             inputs=[
                 file_upload,
+                strategy_radio,
+                grouping_dropdown,
                 scaling_factor,
                 min_volume,
                 max_volume,
                 total_reads,
+                validated_df_state,
             ],
             outputs=[
                 status_output,
                 library_table,
                 project_table,
+                stage1_table,
+                stage2_table,
                 excel_state,
                 download_btn,
             ],

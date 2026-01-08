@@ -9,6 +9,7 @@ into a single pool is impractical.
 
 import pandas as pd
 from datetime import datetime
+from typing import Any
 
 from pooling_calculator.models import (
     SubPoolRecord,
@@ -36,7 +37,7 @@ def determine_pooling_strategy(
     df: pd.DataFrame,
     max_libraries_per_pool: int = MAX_LIBRARIES_PER_POOL,
     min_subpools_for_hierarchical: int = MIN_SUBPOOLS_FOR_HIERARCHICAL,
-) -> tuple[str, list[str], dict[str, any]]:
+) -> tuple[str, list[str], dict[str, Any]]:
     """
     Decide if hierarchical pooling is needed based on library count and grouping.
 
