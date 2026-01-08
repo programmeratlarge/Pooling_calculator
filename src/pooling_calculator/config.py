@@ -248,3 +248,29 @@ def get_all_valid_column_names() -> list[str]:
         List of standard column names
     """
     return REQUIRED_COLUMNS + OPTIONAL_COLUMNS
+
+
+# ============================================================================
+# Hierarchical Pooling Configuration
+# ============================================================================
+
+# Strategy Selection
+MAX_LIBRARIES_PER_POOL = 96
+"""Maximum libraries in a single pooling operation (typical 96-well plate)."""
+
+MIN_SUBPOOLS_FOR_HIERARCHICAL = 5
+"""Minimum number of sub-pools to justify hierarchical approach."""
+
+HIERARCHICAL_GROUPING_COLUMNS = ["Project ID"]
+"""Default columns to consider for hierarchical pooling grouping."""
+
+# Sub-pool Configuration
+DEFAULT_MAX_LIBRARIES_PER_SUBPOOL = 96
+"""Default maximum libraries per sub-pool (96-well plate limit)."""
+
+# Workflow Thresholds
+LARGE_EXPERIMENT_THRESHOLD = 100
+"""Number of libraries above which hierarchical pooling is strongly recommended."""
+
+SUBPOOL_BALANCE_TOLERANCE = 0.1
+"""Maximum acceptable imbalance in sub-pool concentrations (10% variation)."""
