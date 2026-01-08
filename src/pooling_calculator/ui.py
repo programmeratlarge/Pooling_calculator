@@ -197,7 +197,162 @@ def build_app() -> gr.Blocks:
     Returns:
         Configured Gradio Blocks interface
     """
-    with gr.Blocks(title="Pooling Calculator") as app:
+    # Custom CSS with Tailwind CDN
+    custom_css = """
+    <style>
+        /* Import Tailwind CSS */
+        @import url('https://cdn.jsdelivr.net/npm/tailwindcss@3.4.1/base.min.css');
+
+        /* Custom styling for the app */
+        .gradio-container {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+        }
+
+        /* Header styling */
+        .gradio-container h1 {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        /* Section headers */
+        .gradio-container h2 {
+            color: #4a5568;
+            font-weight: 600;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        /* Card-like containers */
+        .gradio-container .block {
+            background: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        /* Input fields */
+        .gradio-container input[type="number"],
+        .gradio-container input[type="text"] {
+            border: 1px solid #cbd5e0;
+            border-radius: 0.5rem;
+            transition: all 0.2s;
+        }
+
+        .gradio-container input[type="number"]:focus,
+        .gradio-container input[type="text"]:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        /* Buttons */
+        .gradio-container button {
+            border-radius: 0.5rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .gradio-container button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Primary button */
+        .gradio-container .primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        /* Status section */
+        .status-section {
+            background: linear-gradient(135deg, #f6f8fc 0%, #eef2f7 100%);
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            border-left: 4px solid #667eea;
+        }
+
+        /* Tables */
+        .gradio-container .dataframe {
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+
+        .gradio-container .dataframe thead {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .gradio-container .dataframe tbody tr:hover {
+            background-color: #f7fafc;
+        }
+
+        /* Tabs */
+        .gradio-container .tab-nav button {
+            border-radius: 0.5rem 0.5rem 0 0;
+            font-weight: 500;
+        }
+
+        .gradio-container .tab-nav button.selected {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        /* File upload area */
+        .gradio-container .upload-container {
+            border: 2px dashed #cbd5e0;
+            border-radius: 0.75rem;
+            transition: all 0.2s;
+        }
+
+        .gradio-container .upload-container:hover {
+            border-color: #667eea;
+            background-color: #f7fafc;
+        }
+
+        /* Info/warning badges */
+        .info-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            background: #e6f7ff;
+            color: #0366d6;
+            margin-right: 0.5rem;
+        }
+
+        .warning-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            background: #fff3cd;
+            color: #856404;
+            margin-right: 0.5rem;
+        }
+
+        .success-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            background: #d4edda;
+            color: #155724;
+            margin-right: 0.5rem;
+        }
+    </style>
+    """
+
+    with gr.Blocks(title="Pooling Calculator", css=custom_css) as app:
+        # Inject custom CSS as HTML
+        gr.HTML(custom_css)
+
         gr.Markdown(
             f"""
             # 🧬 NGS Library Pooling Calculator
@@ -425,6 +580,7 @@ def main():
     server_name = os.getenv("GRADIO_SERVER_NAME", "127.0.0.1")
     server_port = int(os.getenv("GRADIO_SERVER_PORT", "7860"))
 
+    # Apply custom CSS and theme in launch (Gradio 6.0+)
     app.launch(
         server_name=server_name,
         server_port=server_port,
