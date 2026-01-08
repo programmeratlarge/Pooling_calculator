@@ -207,6 +207,7 @@ def build_app() -> gr.Blocks:
             """
         )
 
+        # Top Row: Input Section (File Upload + Parameters)
         with gr.Row():
             with gr.Column(scale=1):
                 gr.Markdown("## 📁 Input")
@@ -217,10 +218,11 @@ def build_app() -> gr.Blocks:
                     type="filepath",
                 )
 
-                gr.Markdown("### Global Parameters")
+            with gr.Column(scale=1):
+                gr.Markdown("## ⚙️ Global Parameters")
 
                 scaling_factor = gr.Number(
-                    label="⚙️ Scaling Factor",
+                    label="Scaling Factor",
                     value=0.1,
                     minimum=0.001,
                     maximum=10.0,
@@ -283,14 +285,26 @@ def build_app() -> gr.Blocks:
                     size="lg",
                 )
 
-            with gr.Column(scale=2):
-                gr.Markdown("## 📊 Results")
+        # Middle Row: Status and Results
+        with gr.Row():
+            with gr.Column():
+                gr.Markdown("## 📊 Status & Validation Results")
 
                 status_output = gr.Markdown(
                     value="Upload a file and click 'Calculate Pooling Plan' to begin.",
                     label="Status",
                 )
 
+                download_btn = gr.DownloadButton(
+                    label="📥 Download Pooling Plan (Excel)",
+                    variant="secondary",
+                    size="lg",
+                    visible=False,
+                )
+
+        # Bottom Row: Data Tables (Full Width)
+        with gr.Row():
+            with gr.Column():
                 with gr.Tabs():
                     with gr.Tab("📋 Library-Level Results"):
                         library_table = gr.DataFrame(
@@ -303,13 +317,6 @@ def build_app() -> gr.Blocks:
                             label="Aggregated by Project",
                             wrap=True,
                         )
-
-                download_btn = gr.DownloadButton(
-                    label="📥 Download Pooling Plan (Excel)",
-                    variant="secondary",
-                    size="lg",
-                    visible=False,
-                )
 
         # Hidden state to store Excel bytes
         excel_state = gr.State(value=None)
