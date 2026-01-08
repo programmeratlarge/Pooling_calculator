@@ -10,7 +10,7 @@ The project focuses on advanced sub-pool management, allowing users to combine p
 
 You can run the pooling calculator here:
 
-👉 **[pooling_calculator.com](https://pooling_calculator.com)**
+👉 **[http://cbsugenomics2.biohpc.cornell.edu:7860/](http://cbsugenomics2.biohpc.cornell.edu:7860/)**
 
 ---
 
