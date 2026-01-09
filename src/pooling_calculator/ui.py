@@ -26,6 +26,11 @@ from pooling_calculator.hierarchical import (
     determine_pooling_strategy,
     compute_hierarchical_pooling,
 )
+from pooling_calculator.models import PrePoolDefinition
+from pooling_calculator.prepooling import (
+    compute_with_prepools,
+    validate_prepool_definitions,
+)
 from pooling_calculator.config import (
     MIN_TOTAL_VOLUME_UL,
     WARN_LOW_TOTAL_VOLUME_UL,
@@ -337,6 +342,155 @@ def process_upload(
         return error_msg, None, None, None, None, None
 
 
+def process_with_prepools_ui(
+    validated_df: pd.DataFrame,
+    prepool1_selections: list[str],
+    prepool2_selections: list[str],
+    scaling_factor: float,
+    min_volume: float,
+    max_volume: float | None,
+    total_reads: float | None,
+) -> tuple[str, pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None, bytes | None]:
+    """
+    Process pre-pooling workflow and recalculate final pool.
+
+    Args:
+        validated_df: DataFrame with molarity calculated
+        prepool1_selections: Library names selected for Prepool 1
+        prepool2_selections: Library names selected for Prepool 2
+        scaling_factor: Volume calculation parameter
+        min_volume: Minimum pipettable volume
+        max_volume: Maximum volume constraint
+        total_reads: Total sequencing reads (optional)
+
+    Returns:
+        Tuple of (status_message, final_pool_df, prepool1_df, prepool2_df, excel_bytes)
+    """
+    if validated_df is None or validated_df.empty:
+        return "❌ No data available. Please calculate the initial pooling plan first.", None, None, None, None
+
+    try:
+        # Build prepool definitions
+        prepool_definitions = []
+
+        if prepool1_selections and len(prepool1_selections) > 0:
+            from datetime import datetime
+            prepool_definitions.append(
+                PrePoolDefinition(
+                    prepool_id="prepool_1",
+                    prepool_name="Prepool 1",
+                    member_library_names=prepool1_selections,
+                    created_at=datetime.now(),
+                )
+            )
+
+        if prepool2_selections and len(prepool2_selections) > 0:
+            from datetime import datetime
+            prepool_definitions.append(
+                PrePoolDefinition(
+                    prepool_id="prepool_2",
+                    prepool_name="Prepool 2",
+                    member_library_names=prepool2_selections,
+                    created_at=datetime.now(),
+                )
+            )
+
+        if not prepool_definitions:
+            return "⚠️ Please select at least one library for pre-pooling.", None, None, None, None
+
+        # Validate prepool definitions
+        is_valid, errors = validate_prepool_definitions(validated_df, prepool_definitions)
+        if not is_valid:
+            error_msg = "❌ **Pre-pool validation failed:**\n\n"
+            for err in errors:
+                error_msg += f"- {err}\n"
+            return error_msg, None, None, None, None
+
+        # Compute pre-pooling plan
+        max_vol = max_volume if max_volume and max_volume > 0 else None
+        total_r = total_reads if total_reads and total_reads > 0 else None
+
+        plan = compute_with_prepools(
+            df=validated_df,
+            prepool_definitions=prepool_definitions,
+            scaling_factor=scaling_factor,
+            min_volume_ul=min_volume,
+            max_volume_ul=max_vol,
+            total_reads_m=total_r,
+        )
+
+        # Extract results
+        final_pool_df = pd.DataFrame(plan.final_pool_json)
+
+        # Extract prepool member volumes
+        prepool1_df = None
+        prepool2_df = None
+
+        for prepool_result in plan.prepools:
+            member_df = pd.DataFrame(prepool_result.member_volumes_json)
+            if prepool_result.prepool_definition.prepool_id == "prepool_1":
+                prepool1_df = member_df
+            elif prepool_result.prepool_definition.prepool_id == "prepool_2":
+                prepool2_df = member_df
+
+        # Build status message
+        status_msg = "✅ **PRE-POOLING COMPLETE**\n\n"
+        status_msg += f"**Total libraries:** {plan.total_libraries}\n"
+        status_msg += f"**Libraries in pre-pools:** {plan.libraries_in_prepools}\n"
+        status_msg += f"**Standalone libraries:** {plan.standalone_libraries}\n"
+        status_msg += f"**Number of pre-pools:** {len(plan.prepools)}\n\n"
+
+        for prepool_result in plan.prepools:
+            status_msg += f"### {prepool_result.prepool_definition.prepool_name}\n"
+            status_msg += f"- Members: {len(prepool_result.prepool_definition.member_library_names)}\n"
+            status_msg += f"- Calculated concentration: {prepool_result.calculated_nm:.3f} nM\n"
+            status_msg += f"- Total volume: {prepool_result.total_volume_ul:.3f} µl\n"
+            status_msg += f"- Target reads: {prepool_result.target_reads_m:.2f} M\n\n"
+
+        status_msg += "✅ Final pool calculated with pre-pools as super-libraries\n"
+
+        # Format dataframes for display
+        if final_pool_df is not None:
+            display_cols = [
+                "Library Name",
+                "Project ID",
+                "Adjusted lib nM",
+                "Target Reads (M)",
+                "Final Volume (µl)",
+                "Pool Fraction",
+            ]
+            if "Expected Reads (M)" in final_pool_df.columns:
+                display_cols.append("Expected Reads (M)")
+
+            final_pool_display = final_pool_df[[col for col in display_cols if col in final_pool_df.columns]].copy()
+
+            # Round numeric columns
+            for col in final_pool_display.select_dtypes(include=['float64', 'float32']).columns:
+                final_pool_display[col] = final_pool_display[col].round(4)
+        else:
+            final_pool_display = None
+
+        # Format prepool dataframes
+        if prepool1_df is not None:
+            for col in prepool1_df.select_dtypes(include=['float64', 'float32']).columns:
+                prepool1_df[col] = prepool1_df[col].round(4)
+
+        if prepool2_df is not None:
+            for col in prepool2_df.select_dtypes(include=['float64', 'float32']).columns:
+                prepool2_df[col] = prepool2_df[col].round(4)
+
+        # TODO: Export to Excel with prepool sheets
+        excel_bytes = None
+
+        return status_msg, final_pool_display, prepool1_df, prepool2_df, excel_bytes
+
+    except Exception as e:
+        error_msg = f"❌ **ERROR during pre-pooling**: {str(e)}\n\n"
+        import traceback
+        error_msg += f"Details:\n{traceback.format_exc()}"
+        return error_msg, None, None, None, None
+
+
 def build_app() -> gr.Blocks:
     """
     Build and return the Gradio interface.
@@ -634,6 +788,45 @@ def build_app() -> gr.Blocks:
                     visible=False,
                 )
 
+        # Pre-pooling Section (visible after initial calculation)
+        with gr.Row(visible=False) as prepool_section:
+            with gr.Column():
+                gr.Markdown("## 🔄 Pre-Pooling (Optional)")
+                gr.Markdown(
+                    """
+                    Select libraries to group into pre-pools before the final pooling step.
+                    Pre-pools will be treated as "super-libraries" in the final calculation.
+                    """
+                )
+
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        gr.Markdown("### Prepool 1")
+                        prepool1_checkbox = gr.CheckboxGroup(
+                            choices=[],
+                            label="Select libraries for Prepool 1",
+                            info="Select one or more libraries to combine into Prepool 1",
+                        )
+
+                    with gr.Column(scale=1):
+                        gr.Markdown("### Prepool 2")
+                        prepool2_checkbox = gr.CheckboxGroup(
+                            choices=[],
+                            label="Select libraries for Prepool 2",
+                            info="Select one or more libraries to combine into Prepool 2",
+                        )
+
+                recalculate_prepool_btn = gr.Button(
+                    "🔄 Recalculate with Pre-Pools",
+                    variant="primary",
+                    size="lg",
+                )
+
+                prepool_status = gr.Markdown(
+                    value="Select libraries above and click 'Recalculate with Pre-Pools'",
+                    label="Pre-pooling Status",
+                )
+
         # Bottom Row: Data Tables (Full Width)
         with gr.Row():
             with gr.Column():
@@ -664,9 +857,28 @@ def build_app() -> gr.Blocks:
                             visible=False,
                         )
 
+                    with gr.Tab("🔵 Prepool 1 Details"):
+                        prepool1_table = gr.DataFrame(
+                            label="Prepool 1 Member Volumes",
+                            wrap=True,
+                        )
+
+                    with gr.Tab("🟢 Prepool 2 Details"):
+                        prepool2_table = gr.DataFrame(
+                            label="Prepool 2 Member Volumes",
+                            wrap=True,
+                        )
+
+                    with gr.Tab("🎯 Final Pool (with Prepools)"):
+                        final_prepool_table = gr.DataFrame(
+                            label="Final Pool including Pre-pools as Super-libraries",
+                            wrap=True,
+                        )
+
         # Hidden states
         excel_state = gr.State(value=None)
         validated_df_state = gr.State(value=None)
+        df_with_molarity_state = gr.State(value=None)  # For pre-pooling
         recommended_strategy_state = gr.State(value="single_stage")
         grouping_options_state = gr.State(value=[])
         analysis_state = gr.State(value={})
@@ -742,6 +954,17 @@ def build_app() -> gr.Blocks:
             # Show hierarchical tabs if hierarchical strategy
             show_hierarchical = strategy == "hierarchical" and stage1_df is not None
 
+            # Populate prepool checkboxes with library names (for single-stage only)
+            library_choices = []
+            df_with_molarity = None
+            show_prepool_section = False
+
+            if strategy == "single_stage" and validated_df is not None:
+                # Compute molarity for pre-pooling
+                df_with_molarity = compute_effective_molarity(validated_df)
+                library_choices = df_with_molarity["Library Name"].tolist()
+                show_prepool_section = True
+
             return (
                 status,
                 lib_df if lib_df is not None else gr.update(),
@@ -750,6 +973,10 @@ def build_app() -> gr.Blocks:
                 stage2_df if stage2_df is not None else gr.update(),
                 excel_bytes,
                 gr.update(visible=show_download),
+                df_with_molarity,  # Store for pre-pooling
+                gr.update(visible=show_prepool_section),  # Show/hide prepool section
+                gr.update(choices=library_choices, value=[]),  # Prepool 1 checkbox
+                gr.update(choices=library_choices, value=[]),  # Prepool 2 checkbox
             )
 
         calculate_btn.click(
@@ -772,6 +999,10 @@ def build_app() -> gr.Blocks:
                 stage2_table,
                 excel_state,
                 download_btn,
+                df_with_molarity_state,
+                prepool_section,
+                prepool1_checkbox,
+                prepool2_checkbox,
             ],
         )
 
@@ -802,6 +1033,52 @@ def build_app() -> gr.Blocks:
             fn=prepare_download,
             inputs=[excel_state],
             outputs=download_btn,
+        )
+
+        # Wire up pre-pooling recalculate button
+        def recalculate_with_prepools_wrapper(
+            df_with_molarity,
+            prepool1_selections,
+            prepool2_selections,
+            scaling,
+            min_vol,
+            max_vol,
+            total_r,
+        ):
+            status, final_pool_df, prepool1_df, prepool2_df, excel_bytes = process_with_prepools_ui(
+                validated_df=df_with_molarity,
+                prepool1_selections=prepool1_selections,
+                prepool2_selections=prepool2_selections,
+                scaling_factor=scaling,
+                min_volume=min_vol,
+                max_volume=max_vol,
+                total_reads=total_r,
+            )
+
+            return (
+                status,
+                final_pool_df if final_pool_df is not None else gr.update(),
+                prepool1_df if prepool1_df is not None else gr.update(),
+                prepool2_df if prepool2_df is not None else gr.update(),
+            )
+
+        recalculate_prepool_btn.click(
+            fn=recalculate_with_prepools_wrapper,
+            inputs=[
+                df_with_molarity_state,
+                prepool1_checkbox,
+                prepool2_checkbox,
+                scaling_factor,
+                min_volume,
+                max_volume,
+                total_reads,
+            ],
+            outputs=[
+                prepool_status,
+                final_prepool_table,
+                prepool1_table,
+                prepool2_table,
+            ],
         )
 
         # Footer
