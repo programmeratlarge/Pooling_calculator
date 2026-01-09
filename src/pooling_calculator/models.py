@@ -459,3 +459,145 @@ class HierarchicalPoolingPlan(BaseModel):
             ]
         }
     }
+
+
+# ============================================================================
+# Pre-Pooling Models
+# ============================================================================
+
+
+class PrePoolDefinition(BaseModel):
+    """
+    User-defined pre-pool grouping specification.
+
+    Pre-pools allow users to manually group specific libraries together
+    before the final pooling step. This is useful for workflow optimization
+    and grouping similar samples.
+    """
+
+    prepool_id: str = Field(..., min_length=1, description="Unique identifier (e.g., 'Prepool_1')")
+    prepool_name: str = Field(..., min_length=1, description="User-friendly display name")
+    member_library_names: list[str] = Field(..., min_length=1, description="List of library names to include")
+    created_at: datetime = Field(default_factory=datetime.now, description="When this pre-pool was defined")
+    notes: str | None = Field(None, description="Optional notes about this pre-pool")
+
+    @field_validator("prepool_id", "prepool_name")
+    @classmethod
+    def strip_whitespace_prepool(cls, v: str) -> str:
+        """Strip leading/trailing whitespace."""
+        return v.strip()
+
+    @field_validator("member_library_names")
+    @classmethod
+    def validate_unique_libraries(cls, v: list[str]) -> list[str]:
+        """Ensure no duplicate library names within a pre-pool."""
+        if len(v) != len(set(v)):
+            raise ValueError("Duplicate library names found in member_library_names")
+        return [lib.strip() for lib in v]
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "prepool_id": "prepool_1",
+                    "prepool_name": "Prepool 1",
+                    "member_library_names": ["Lib001", "Lib002", "Lib003"],
+                    "created_at": "2025-01-09T10:00:00",
+                    "notes": "High concentration samples",
+                }
+            ]
+        }
+    }
+
+
+class PrePoolCalculationResult(BaseModel):
+    """
+    Result of calculating pooling volumes for a user-defined pre-pool.
+
+    Contains both the original definition and the calculated properties
+    of the pre-pool after its member libraries are pooled together.
+    """
+
+    prepool_definition: PrePoolDefinition = Field(..., description="Original pre-pool specification")
+    calculated_nm: float = Field(..., gt=0, description="Effective molarity after pooling members (nM)")
+    total_volume_ul: float = Field(..., gt=0, description="Total volume of this pre-pool (µl)")
+    target_reads_m: float = Field(..., gt=0, description="Sum of target reads from all members (M)")
+    member_volumes_json: list[dict[str, Any]] = Field(..., description="Per-library volumes within prepool (JSON)")
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "prepool_definition": {
+                        "prepool_id": "prepool_1",
+                        "prepool_name": "Prepool 1",
+                        "member_library_names": ["Lib001", "Lib002"],
+                        "created_at": "2025-01-09T10:00:00",
+                        "notes": None,
+                    },
+                    "calculated_nm": 25.3,
+                    "total_volume_ul": 30.0,
+                    "target_reads_m": 20.0,
+                    "member_volumes_json": [],
+                }
+            ]
+        }
+    }
+
+
+class PrePoolingPlan(BaseModel):
+    """
+    Complete pre-pooling workflow result.
+
+    Represents the entire calculation when user-defined pre-pools are used,
+    including both pre-pool details and the final pool composition.
+    """
+
+    prepools: list[PrePoolCalculationResult] = Field(default_factory=list, description="All calculated pre-pools")
+    remaining_libraries_json: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Libraries NOT in any pre-pool (JSON)"
+    )
+    final_pool_json: list[dict[str, Any]] = Field(..., description="Final pool with individuals + prepools (JSON)")
+
+    # Summary statistics
+    total_libraries: int = Field(..., ge=0, description="Total number of input libraries")
+    libraries_in_prepools: int = Field(..., ge=0, description="Number of libraries assigned to pre-pools")
+    standalone_libraries: int = Field(..., ge=0, description="Number of libraries NOT in any pre-pool")
+
+    # Metadata
+    created_at: datetime = Field(default_factory=datetime.now, description="When this plan was created")
+    parameters: dict[str, Any] = Field(default_factory=dict, description="Calculation parameters used")
+
+    @field_validator("libraries_in_prepools", "standalone_libraries")
+    @classmethod
+    def validate_library_counts(cls, v: int, info) -> int:
+        """Validate that library counts sum correctly."""
+        data = info.data
+        if "total_libraries" in data:
+            total = data["total_libraries"]
+            in_prepools = data.get("libraries_in_prepools", 0)
+            standalone = data.get("standalone_libraries", 0)
+
+            if in_prepools + standalone != total:
+                raise ValueError(
+                    f"Library counts don't sum: {in_prepools} + {standalone} != {total}"
+                )
+        return v
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "prepools": [],
+                    "remaining_libraries_json": [],
+                    "final_pool_json": [],
+                    "total_libraries": 48,
+                    "libraries_in_prepools": 11,
+                    "standalone_libraries": 37,
+                    "created_at": "2025-01-09T10:00:00",
+                    "parameters": {"scaling_factor": 0.1},
+                }
+            ]
+        }
+    }
