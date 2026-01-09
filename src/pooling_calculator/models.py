@@ -8,7 +8,7 @@ with runtime validation and type safety provided by Pydantic.
 from datetime import datetime
 from enum import Enum
 from typing import Any
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ============================================================================
@@ -569,21 +569,18 @@ class PrePoolingPlan(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now, description="When this plan was created")
     parameters: dict[str, Any] = Field(default_factory=dict, description="Calculation parameters used")
 
-    @field_validator("libraries_in_prepools", "standalone_libraries")
-    @classmethod
-    def validate_library_counts(cls, v: int, info) -> int:
+    @model_validator(mode="after")
+    def validate_library_counts(self) -> "PrePoolingPlan":
         """Validate that library counts sum correctly."""
-        data = info.data
-        if "total_libraries" in data:
-            total = data["total_libraries"]
-            in_prepools = data.get("libraries_in_prepools", 0)
-            standalone = data.get("standalone_libraries", 0)
+        total = self.total_libraries
+        in_prepools = self.libraries_in_prepools
+        standalone = self.standalone_libraries
 
-            if in_prepools + standalone != total:
-                raise ValueError(
-                    f"Library counts don't sum: {in_prepools} + {standalone} != {total}"
-                )
-        return v
+        if in_prepools + standalone != total:
+            raise ValueError(
+                f"Library counts don't sum: {in_prepools} + {standalone} != {total}"
+            )
+        return self
 
     model_config = {
         "json_schema_extra": {
