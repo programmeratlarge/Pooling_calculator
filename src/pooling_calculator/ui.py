@@ -15,6 +15,7 @@ from pooling_calculator.io import (
     load_spreadsheet,
     normalize_dataframe_columns,
     export_results_to_excel,
+    export_prepooling_results_to_excel,
 )
 from pooling_calculator.validation import run_all_validations
 from pooling_calculator.compute import (
@@ -470,19 +471,38 @@ def process_with_prepools_ui(
         else:
             final_pool_display = None
 
-        # Format prepool dataframes
+        # Format prepool dataframes for display
+        prepool1_display = None
+        prepool2_display = None
+
         if prepool1_df is not None:
-            for col in prepool1_df.select_dtypes(include=['float64', 'float32']).columns:
-                prepool1_df[col] = prepool1_df[col].round(4)
+            prepool1_display = prepool1_df.copy()
+            for col in prepool1_display.select_dtypes(include=['float64', 'float32']).columns:
+                prepool1_display[col] = prepool1_display[col].round(4)
 
         if prepool2_df is not None:
-            for col in prepool2_df.select_dtypes(include=['float64', 'float32']).columns:
-                prepool2_df[col] = prepool2_df[col].round(4)
+            prepool2_display = prepool2_df.copy()
+            for col in prepool2_display.select_dtypes(include=['float64', 'float32']).columns:
+                prepool2_display[col] = prepool2_display[col].round(4)
 
-        # TODO: Export to Excel with prepool sheets
-        excel_bytes = None
+        # Export to Excel with prepool sheets
+        max_vol_param = max_vol if max_vol else "N/A"
+        total_r_param = total_r if total_r else "N/A"
 
-        return status_msg, final_pool_display, prepool1_df, prepool2_df, excel_bytes
+        excel_bytes = export_prepooling_results_to_excel(
+            final_pool_df=final_pool_df,
+            prepool1_df=prepool1_df,
+            prepool2_df=prepool2_df,
+            prepool_plan=plan,
+            pooling_params={
+                "Scaling Factor": scaling_factor,
+                "Min Volume (µl)": min_volume,
+                "Max Volume (µl)": max_vol_param,
+                "Total Reads (M)": total_r_param,
+            },
+        )
+
+        return status_msg, final_pool_display, prepool1_display, prepool2_display, excel_bytes
 
     except Exception as e:
         error_msg = f"❌ **ERROR during pre-pooling**: {str(e)}\n\n"
@@ -827,6 +847,13 @@ def build_app() -> gr.Blocks:
                     label="Pre-pooling Status",
                 )
 
+                download_prepool_btn = gr.DownloadButton(
+                    label="📥 Download Pre-Pooling Plan (Excel)",
+                    variant="secondary",
+                    size="lg",
+                    visible=False,
+                )
+
         # Bottom Row: Data Tables (Full Width)
         with gr.Row():
             with gr.Column():
@@ -877,6 +904,7 @@ def build_app() -> gr.Blocks:
 
         # Hidden states
         excel_state = gr.State(value=None)
+        prepool_excel_state = gr.State(value=None)  # For pre-pooling Excel
         validated_df_state = gr.State(value=None)
         df_with_molarity_state = gr.State(value=None)  # For pre-pooling
         recommended_strategy_state = gr.State(value="single_stage")
@@ -1055,11 +1083,16 @@ def build_app() -> gr.Blocks:
                 total_reads=total_r,
             )
 
+            # Show download button if Excel was generated
+            show_download = excel_bytes is not None
+
             return (
                 status,
                 final_pool_df if final_pool_df is not None else gr.update(),
                 prepool1_df if prepool1_df is not None else gr.update(),
                 prepool2_df if prepool2_df is not None else gr.update(),
+                excel_bytes,
+                gr.update(visible=show_download),
             )
 
         recalculate_prepool_btn.click(
@@ -1078,7 +1111,38 @@ def build_app() -> gr.Blocks:
                 final_prepool_table,
                 prepool1_table,
                 prepool2_table,
+                prepool_excel_state,
+                download_prepool_btn,
             ],
+        )
+
+        # Wire up pre-pooling download button
+        def prepare_prepool_download(excel_bytes):
+            if excel_bytes is None:
+                return None
+
+            # Write bytes to a temporary file
+            import tempfile
+            from datetime import datetime
+
+            # Create filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"prepooling_plan_{timestamp}.xlsx"
+
+            # Create temp file
+            temp_dir = Path(tempfile.gettempdir())
+            temp_path = temp_dir / filename
+
+            # Write bytes to file
+            with open(temp_path, "wb") as f:
+                f.write(excel_bytes)
+
+            return str(temp_path)
+
+        download_prepool_btn.click(
+            fn=prepare_prepool_download,
+            inputs=[prepool_excel_state],
+            outputs=download_prepool_btn,
         )
 
         # Footer
