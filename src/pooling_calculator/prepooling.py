@@ -99,15 +99,16 @@ def create_prepool_from_selection(
     # Step 1: Total volume (sum of all member volumes)
     total_volume_ul = prepool_volumes_df["Final Volume (µl)"].sum()
 
-    # Step 2: Total moles = sum(concentration × volume)
-    # concentration in nM, volume in µL → nanomoles
-    prepool_volumes_df["nanomoles"] = (
-        prepool_volumes_df["Adjusted lib nM"] * prepool_volumes_df["Final Volume (µl)"]
-    )
-    total_nanomoles = prepool_volumes_df["nanomoles"].sum()
+    # Step 2: Calculate prepool concentration using reference spreadsheet method
+    # Per user feedback from 7050I_miRNA_pool_copy.xlsx:
+    # - adj lib pmol = Target Reads (M) / 10 (desired relative picomole contribution)
+    # - Prepool nM = sum(adj lib pmol) / sum(pool volumes)
+    # This ensures the prepool concentration reflects the weighted target reads
+    prepool_volumes_df["adj lib pmol"] = prepool_volumes_df["Target Reads (M)"] / 10.0
+    total_pmol = prepool_volumes_df["adj lib pmol"].sum()
 
     # Step 3: Pre-pool effective concentration
-    calculated_nm = total_nanomoles / total_volume_ul if total_volume_ul > 0 else 0.0
+    calculated_nm = total_pmol / total_volume_ul if total_volume_ul > 0 else 0.0
 
     # Step 4: Sum target reads from all members
     target_reads_m = prepool_volumes_df["Target Reads (M)"].sum()
