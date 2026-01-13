@@ -683,9 +683,36 @@ def build_app() -> gr.Blocks:
             """
         )
 
-        # Top Row: Input Section (File Upload + Strategy Analysis)
+        # Top Row: Left side (Quick Start + Input + Strategy) and Right side (Parameters)
         with gr.Row():
+            # Left Column: Quick Start Guide, Input, and Strategy
             with gr.Column(scale=1):
+                # Quick Start Guide (collapsible)
+                with gr.Accordion("📖 Quick Start Guide", open=False):
+                    gr.Markdown(
+                        """
+                        1. **Prepare your input file** (Excel or CSV) with these required columns:
+                           - `Project ID`, `Library Name`, `Final ng/ul`, `Total Volume`, `Barcodes`,
+                           - `Adjusted peak size`, `Target Reads (M)`
+                           - Optional: `Empirical Library nM`
+
+                        2. **Upload your file** using the file picker below
+
+                        3. **Set parameters** on the right:
+                           - Desired pool volume: Total volume you want to create
+                           - Min volume: Minimum your pipette can dispense accurately
+                           - Max volume: Optional constraint on individual library volumes
+                           - Total reads: Optional, for calculating expected read distribution
+
+                        4. **Click "Calculate Pooling Plan"** and review the results
+
+                        5. **Download the Excel file** containing your complete pooling protocol
+
+                        ---
+                        **Need help?** Check the [documentation](https://github.com/your-repo/pooling-calculator) or [report an issue](https://github.com/your-repo/pooling-calculator/issues).
+                        """
+                    )
+
                 gr.Markdown("## 📁 Input")
 
                 file_upload = gr.File(
@@ -700,7 +727,6 @@ def build_app() -> gr.Blocks:
                     size="lg",
                 )
 
-            with gr.Column(scale=1):
                 gr.Markdown("## 🎯 Pooling Strategy")
 
                 strategy_radio = gr.Radio(
@@ -718,8 +744,14 @@ def build_app() -> gr.Blocks:
                     info="Column to group libraries into sub-pools",
                 )
 
-        # Second Row: Global Parameters
-        with gr.Row():
+                calculate_btn = gr.Button(
+                    "🧮 Calculate Pooling Plan",
+                    variant="primary",
+                    size="lg",
+                    interactive=False,
+                )
+
+            # Right Column: Global Parameters
             with gr.Column(scale=1):
                 gr.Markdown("## ⚙️ Global Parameters")
 
@@ -779,16 +811,6 @@ def build_app() -> gr.Blocks:
                     minimum=0,
                     step=1,
                     info="Expected total reads for the sequencing run (for reporting)",
-                )
-
-            with gr.Column(scale=1):
-                gr.Markdown("## 🔧 Actions")
-
-                calculate_btn = gr.Button(
-                    "🧮 Calculate Pooling Plan",
-                    variant="primary",
-                    size="lg",
-                    interactive=False,
                 )
 
         # Middle Row: Status and Results
@@ -888,12 +910,14 @@ def build_app() -> gr.Blocks:
                         prepool1_table = gr.DataFrame(
                             label="Prepool 1 Member Volumes",
                             wrap=True,
+                            column_widths=["6%", "8%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "18%"],
                         )
 
                     with gr.Tab("🟢 Prepool 2 Details"):
                         prepool2_table = gr.DataFrame(
                             label="Prepool 2 Member Volumes",
                             wrap=True,
+                            column_widths=["6%", "8%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "18%"],
                         )
 
                     with gr.Tab("🎯 Final Pool (with Prepools)"):
@@ -1143,34 +1167,6 @@ def build_app() -> gr.Blocks:
             fn=prepare_prepool_download,
             inputs=[prepool_excel_state],
             outputs=download_prepool_btn,
-        )
-
-        # Footer
-        gr.Markdown(
-            """
-            ---
-            ### 📖 Quick Start Guide
-
-            1. **Prepare your input file** (Excel or CSV) with these required columns:
-               - `Project ID`, `Library Name`, `Final ng/ul`, `Total Volume`, `Barcodes`,
-               - `Adjusted peak size`, `Target Reads (M)`
-               - Optional: `Empirical Library nM`
-
-            2. **Upload your file** using the file picker above
-
-            3. **Set parameters**:
-               - Desired pool volume: Total volume you want to create
-               - Min volume: Minimum your pipette can dispense accurately
-               - Max volume: Optional constraint on individual library volumes
-               - Total reads: Optional, for calculating expected read distribution
-
-            4. **Click "Calculate Pooling Plan"** and review the results
-
-            5. **Download the Excel file** containing your complete pooling protocol
-
-            ---
-            **Need help?** Check the [documentation](https://github.com/your-repo/pooling-calculator) or [report an issue](https://github.com/your-repo/pooling-calculator/issues).
-            """
         )
 
     return app
