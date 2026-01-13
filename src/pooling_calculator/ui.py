@@ -799,10 +799,10 @@ def build_app() -> gr.Blocks:
 
                 max_volume = gr.Number(
                     label="Maximum Volume per Library (µl) [Optional]",
-                    value=None,
+                    value=0,
                     minimum=0,
                     step=0.1,
-                    info="Leave empty for no maximum constraint",
+                    info="Set to 0 for no maximum constraint",
                 )
 
                 total_reads = gr.Number(
@@ -910,14 +910,14 @@ def build_app() -> gr.Blocks:
                         prepool1_table = gr.DataFrame(
                             label="Prepool 1 Member Volumes",
                             wrap=True,
-                            column_widths=["5%", "7%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "36%"],
+                            column_widths=["4%", "6%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "50%"],
                         )
 
                     with gr.Tab("🟢 Prepool 2 Details"):
                         prepool2_table = gr.DataFrame(
                             label="Prepool 2 Member Volumes",
                             wrap=True,
-                            column_widths=["5%", "7%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "36%"],
+                            column_widths=["4%", "6%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "50%"],
                         )
 
                     with gr.Tab("🎯 Final Pool (with Prepools)"):
