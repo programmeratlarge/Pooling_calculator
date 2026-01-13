@@ -21,6 +21,8 @@ This repository contains the code and configuration for the pooling calculator, 
 Features:
 - ✅ Molarity conversion (ng/µl → nM)
 - ✅ Weighted pooling calculations
+- ✅ Hierarchical pooling with pre-pools
+- ✅ Interactive pre-pool selection (mutual exclusion)
 - ✅ Sub-pool management by project
 - ✅ Excel/CSV input and output
 - ✅ Comprehensive validation
@@ -140,6 +142,112 @@ Download the Excel file containing:
 
 ---
 
+## Advanced Features
+
+### Pre-Pooling Workflow
+
+Pre-pooling allows you to group libraries into intermediate pools before creating the final master pool. This is useful for:
+- **Complex experimental designs** with multiple sample groups
+- **Reducing pipetting steps** by pooling related samples together
+- **Managing high-plex experiments** with dozens or hundreds of libraries
+- **Maintaining balanced representation** across all libraries
+
+#### When to Use Pre-Pooling
+
+Use pre-pooling when:
+- You have distinct sample groups that should be combined in stages
+- You want to simplify liquid handling by reducing the number of individual transfers
+- Your protocol requires creating intermediate pools before the final pool
+- You need to verify intermediate pool concentrations before final pooling
+
+#### How Pre-Pooling Works
+
+1. **Initial Calculation**
+   - Upload your library data and click "Calculate Pooling Plan"
+   - The app calculates volumes for single-stage pooling
+   - A pre-pooling section becomes available after successful calculation
+
+2. **Select Libraries for Pre-Pools**
+   - Use the checkboxes to select libraries for **Prepool 1** and **Prepool 2**
+   - Libraries are mutually exclusive - a library can only be in one pre-pool
+   - Selected libraries are automatically removed from the other pre-pool's choices
+   - Unselected libraries remain as standalone entries in the final pool
+
+3. **Recalculate with Pre-Pools**
+   - Click "Recalculate with Pre-Pools" to compute the two-stage workflow
+   - The app calculates:
+     - **Stage 1**: Volumes to create each pre-pool from selected libraries
+     - **Stage 2**: Volumes for the final master pool (treating pre-pools as "super-libraries")
+
+4. **Review Pre-Pool Results**
+   - **Prepool 1 Details**: Shows individual library volumes for Prepool 1 members
+   - **Prepool 2 Details**: Shows individual library volumes for Prepool 2 members
+   - **Final Pool (with Prepools)**: Shows final pooling plan with pre-pools and standalone libraries
+   - Each pre-pool is treated as a single entity with calculated concentration
+
+5. **Download Pre-Pooling Plan**
+   - Excel file contains separate sheets:
+     - `Final Pool`: Master pool with pre-pools and standalone libraries
+     - `Prepool 1`: Detailed volumes for Prepool 1 members
+     - `Prepool 2`: Detailed volumes for Prepool 2 members
+     - `Metadata`: Parameters and pre-pool definitions
+
+#### Pre-Pooling Calculation Details
+
+The pre-pooling calculation uses a validated two-stage approach:
+
+**Stage 1 - Creating Pre-Pools:**
+- For each pre-pool, calculate individual library volumes to pool together
+- Pre-pool concentration is calculated as: `Prepool nM = sum(Target Reads ÷ 10) / sum(pool volumes)`
+- This ensures the pre-pool concentration reflects weighted target reads
+
+**Stage 2 - Final Master Pool:**
+- Treat each pre-pool as a single library with its calculated concentration and total volume
+- Combine pre-pools with standalone libraries (not in any pre-pool)
+- Calculate final pooling volumes to achieve target read distribution
+
+**Example Workflow:**
+```
+Initial: 12 libraries total
+↓
+Select for pre-pooling:
+  - Prepool 1: Libraries A, B, C, D (4 libraries)
+  - Prepool 2: Libraries E, F, G (3 libraries)
+  - Standalone: Libraries H, I, J, K, L (5 libraries)
+↓
+Stage 1 (Pre-pooling):
+  - Pool A+B+C+D → Prepool 1 (calculated concentration: X nM, volume: Y µl)
+  - Pool E+F+G → Prepool 2 (calculated concentration: P nM, volume: Q µl)
+↓
+Stage 2 (Final pool):
+  - Pool: Prepool 1 + Prepool 2 + H + I + J + K + L → Master Pool
+  - Total entities in final pool: 7 (2 prepools + 5 standalone libraries)
+```
+
+#### Pre-Pooling Best Practices
+
+1. **Group Related Samples**
+   - Pre-pool samples from the same experiment, tissue type, or time point
+   - Keep pre-pools at manageable sizes (4-10 libraries per pre-pool)
+
+2. **Verify Intermediate Pools**
+   - After creating pre-pools, measure their concentrations
+   - If using qPCR, update the final pool calculation with measured values
+
+3. **Plan for Liquid Handling**
+   - Pre-pooling reduces final pooling steps but adds an intermediate step
+   - Consider your total pipetting workload when deciding to use pre-pools
+
+4. **Check Volume Constraints**
+   - Ensure pre-pool volumes are sufficient for downstream steps
+   - Watch for "Insufficient volume" flags in the Flags column
+
+5. **Document Your Workflow**
+   - The exported Excel file includes all pre-pool definitions
+   - Use the metadata sheet to track which libraries went into each pre-pool
+
+---
+
 ## Running Tests
 
 Run the complete test suite:
@@ -171,6 +279,8 @@ Current test coverage: **72%** (104 tests passing)
 Pooling_calculator/
 ├── src/pooling_calculator/    # Main application code
 │   ├── compute.py              # Molarity and pooling calculations
+│   ├── hierarchical.py         # Hierarchical pooling by grouping
+│   ├── prepooling.py           # Pre-pooling workflow and calculations
 │   ├── validation.py           # Input validation logic
 │   ├── io.py                   # File I/O operations
 │   ├── models.py               # Data models (Pydantic)
@@ -210,5 +320,6 @@ Follow the guidelines in [CLAUDE.md](CLAUDE.md):
 
 | Version | Date       | Description                                                       |
 |--------:|------------|-------------------------------------------------------------------|
+| v0.3.0  | 2026-01-12 | Added pre-pooling workflow with interactive selection and mutual exclusion |
 | v0.2.0  | 2025-12-17 | Full implementation: Core functionality, UI, tests, Docker support |
 | v0.1.0  | 2025-12-12 | Initial commit.                                                   |
