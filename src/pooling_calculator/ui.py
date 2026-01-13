@@ -154,8 +154,8 @@ def process_upload(
             return "❌ Error: Scaling factor must be > 0", None, None, None, None, None
         if min_volume < 0:
             return "❌ Error: Minimum volume must be >= 0", None, None, None, None, None
-        if max_volume is not None and max_volume <= 0:
-            return "❌ Error: Maximum volume must be > 0", None, None, None, None, None
+        if max_volume is not None and max_volume < 0:
+            return "❌ Error: Maximum volume must be >= 0", None, None, None, None, None
 
         max_vol = max_volume if max_volume and max_volume > 0 else None
         total_r = total_reads if total_reads and total_reads > 0 else None
@@ -910,14 +910,14 @@ def build_app() -> gr.Blocks:
                         prepool1_table = gr.DataFrame(
                             label="Prepool 1 Member Volumes",
                             wrap=True,
-                            column_widths=["4%", "6%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "50%"],
+                            column_widths=["5%", "7%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "36%", "5%"],
                         )
 
                     with gr.Tab("🟢 Prepool 2 Details"):
                         prepool2_table = gr.DataFrame(
                             label="Prepool 2 Member Volumes",
                             wrap=True,
-                            column_widths=["4%", "6%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "4%", "50%"],
+                            column_widths=["5%", "7%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "36%", "5%"],
                         )
 
                     with gr.Tab("🎯 Final Pool (with Prepools)"):
