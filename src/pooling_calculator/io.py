@@ -309,3 +309,126 @@ def create_project_dataframe_for_export(projects: list[dict]) -> pd.DataFrame:
     df = df[OUTPUT_PROJECT_COLUMNS]
 
     return df
+
+
+def export_prepooling_results_to_excel(
+    final_pool_df: pd.DataFrame,
+    prepool1_df: pd.DataFrame | None,
+    prepool2_df: pd.DataFrame | None,
+    prepool_plan: "PrePoolingPlan",
+    output_path: str | Path | None = None,
+    pooling_params: dict | None = None,
+) -> bytes | None:
+    """
+    Export pre-pooling results to Excel file with separate sheets.
+
+    Creates sheets matching the reference Excel format:
+    - Final Pool: Combined pool with prepools as super-libraries
+    - Prepool 1: Member volumes for Prepool 1
+    - Prepool 2: Member volumes for Prepool 2
+    - Metadata: Calculation parameters and prepool info
+
+    Args:
+        final_pool_df: DataFrame with final pool (prepools + remaining libraries)
+        prepool1_df: DataFrame with Prepool 1 member volumes (or None)
+        prepool2_df: DataFrame with Prepool 2 member volumes (or None)
+        prepool_plan: PrePoolingPlan object with complete results
+        output_path: Optional path to save file (if None, returns bytes)
+        pooling_params: Optional dictionary of pooling parameters
+
+    Returns:
+        Bytes of Excel file if output_path is None, otherwise None
+    """
+    # Create BytesIO buffer or use file path
+    if output_path is None:
+        buffer = BytesIO()
+        writer_target = buffer
+    else:
+        writer_target = Path(output_path)
+
+    # Create Excel writer
+    with pd.ExcelWriter(writer_target, engine="openpyxl") as writer:
+        # Write Final Pool sheet
+        final_pool_df.to_excel(
+            writer, sheet_name="Final Pool", index=False, freeze_panes=(1, 0)
+        )
+
+        # Write Prepool 1 sheet if it exists
+        if prepool1_df is not None and not prepool1_df.empty:
+            prepool1_df.to_excel(
+                writer, sheet_name="Prepool 1", index=False, freeze_panes=(1, 0)
+            )
+
+        # Write Prepool 2 sheet if it exists
+        if prepool2_df is not None and not prepool2_df.empty:
+            prepool2_df.to_excel(
+                writer, sheet_name="Prepool 2", index=False, freeze_panes=(1, 0)
+            )
+
+        # Write metadata sheet with prepool information
+        metadata_items = _create_prepooling_metadata_list(prepool_plan, pooling_params)
+        metadata_df = pd.DataFrame(metadata_items, columns=["Parameter", "Value"])
+        metadata_df.to_excel(writer, sheet_name="Metadata", index=False, freeze_panes=(1, 0))
+
+        # Auto-adjust column widths for all sheets
+        for sheet_name in writer.sheets:
+            worksheet = writer.sheets[sheet_name]
+            _auto_adjust_column_widths(worksheet)
+
+    # Return bytes if no output path specified
+    if output_path is None:
+        buffer.seek(0)
+        return buffer.getvalue()
+    else:
+        return None
+
+
+def _create_prepooling_metadata_list(
+    prepool_plan: "PrePoolingPlan",
+    pooling_params: dict | None = None,
+) -> list[tuple[str, str]]:
+    """
+    Create metadata list for pre-pooling export.
+
+    Args:
+        prepool_plan: PrePoolingPlan object with results
+        pooling_params: Optional pooling parameters
+
+    Returns:
+        List of (parameter, value) tuples
+    """
+    # Build metadata as a list of tuples to allow duplicate keys (blank rows)
+    metadata_items = [
+        ("Generated At", datetime.now().isoformat()),
+        ("App Name", "Pooling Calculator"),
+        ("App Version", __version__),
+        ("Workflow", "Pre-Pooling"),
+        ("", ""),  # Blank row
+        ("Total Libraries", str(prepool_plan.total_libraries)),
+        ("Libraries in Pre-pools", str(prepool_plan.libraries_in_prepools)),
+        ("Standalone Libraries", str(prepool_plan.standalone_libraries)),
+        ("Number of Pre-pools", str(len(prepool_plan.prepools))),
+    ]
+
+    # Add prepool-specific information
+    for i, prepool_result in enumerate(prepool_plan.prepools, 1):
+        metadata_items.append(("", ""))  # Blank row
+        metadata_items.append((f"Pre-pool {i} Name", prepool_result.prepool_definition.prepool_name))
+        metadata_items.append((f"Pre-pool {i} Members", str(len(prepool_result.prepool_definition.member_library_names))))
+        metadata_items.append((f"Pre-pool {i} Concentration (nM)", f"{prepool_result.calculated_nm:.3f}"))
+        metadata_items.append((f"Pre-pool {i} Total Volume (µl)", f"{prepool_result.total_volume_ul:.3f}"))
+        metadata_items.append((f"Pre-pool {i} Target Reads (M)", f"{prepool_result.target_reads_m:.2f}"))
+
+    # Add pooling parameters if provided
+    if pooling_params:
+        metadata_items.append(("", ""))  # Blank row
+        metadata_items.append(("Scaling Factor", str(pooling_params.get("Scaling Factor", "N/A"))))
+        metadata_items.append(("Min Volume (µl)", str(pooling_params.get("Min Volume (µl)", "N/A"))))
+
+        max_vol = pooling_params.get("Max Volume (µl)")
+        metadata_items.append(("Max Volume (µl)", str(max_vol) if max_vol and max_vol != "N/A" else "None"))
+
+        total_reads = pooling_params.get("Total Reads (M)")
+        metadata_items.append(("Total Reads (M)", str(total_reads) if total_reads and total_reads != "N/A" else "None"))
+
+    return metadata_items

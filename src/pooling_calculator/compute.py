@@ -159,8 +159,8 @@ def compute_pool_volumes(
         raise ValueError(f"Scaling factor must be > 0, got {scaling_factor}")
     if min_volume_ul < 0:
         raise ValueError(f"Min volume must be >= 0, got {min_volume_ul}")
-    if max_volume_ul is not None and max_volume_ul <= 0:
-        raise ValueError(f"Max volume must be > 0, got {max_volume_ul}")
+    if max_volume_ul is not None and max_volume_ul < 0:
+        raise ValueError(f"Max volume must be >= 0, got {max_volume_ul}")
 
     # Validate required columns
     required = ["Adjusted lib nM", "Target Reads (M)"]
