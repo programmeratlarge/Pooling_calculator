@@ -910,14 +910,14 @@ def build_app() -> gr.Blocks:
                         prepool1_table = gr.DataFrame(
                             label="Prepool 1 Member Volumes",
                             wrap=True,
-                            column_widths=["6%", "8%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "18%"],
+                            column_widths=["5%", "7%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "36%"],
                         )
 
                     with gr.Tab("🟢 Prepool 2 Details"):
                         prepool2_table = gr.DataFrame(
                             label="Prepool 2 Member Volumes",
                             wrap=True,
-                            column_widths=["6%", "8%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "6%", "18%"],
+                            column_widths=["5%", "7%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "5%", "36%"],
                         )
 
                     with gr.Tab("🎯 Final Pool (with Prepools)"):
@@ -1085,6 +1085,51 @@ def build_app() -> gr.Blocks:
             fn=prepare_download,
             inputs=[excel_state],
             outputs=download_btn,
+        )
+
+        # Mutual exclusion for prepool selections
+        def update_prepool1_choices(prepool1_selected, prepool2_selected, df_with_molarity):
+            """Remove Prepool 2 selections from Prepool 1 available choices."""
+            if df_with_molarity is None:
+                return gr.update()
+
+            all_choices = df_with_molarity["Library Name"].tolist()
+
+            # Available choices = all libraries minus those selected for Prepool 2
+            available = [lib for lib in all_choices if lib not in prepool2_selected]
+
+            # Keep only valid selections (remove any that are now in Prepool 2)
+            valid_selected = [lib for lib in prepool1_selected if lib in available]
+
+            return gr.update(choices=available, value=valid_selected)
+
+        def update_prepool2_choices(prepool2_selected, prepool1_selected, df_with_molarity):
+            """Remove Prepool 1 selections from Prepool 2 available choices."""
+            if df_with_molarity is None:
+                return gr.update()
+
+            all_choices = df_with_molarity["Library Name"].tolist()
+
+            # Available choices = all libraries minus those selected for Prepool 1
+            available = [lib for lib in all_choices if lib not in prepool1_selected]
+
+            # Keep only valid selections (remove any that are now in Prepool 1)
+            valid_selected = [lib for lib in prepool2_selected if lib in available]
+
+            return gr.update(choices=available, value=valid_selected)
+
+        # When Prepool 1 selection changes, update Prepool 2 available choices
+        prepool1_checkbox.change(
+            fn=update_prepool2_choices,
+            inputs=[prepool2_checkbox, prepool1_checkbox, df_with_molarity_state],
+            outputs=[prepool2_checkbox],
+        )
+
+        # When Prepool 2 selection changes, update Prepool 1 available choices
+        prepool2_checkbox.change(
+            fn=update_prepool1_choices,
+            inputs=[prepool1_checkbox, prepool2_checkbox, df_with_molarity_state],
+            outputs=[prepool1_checkbox],
         )
 
         # Wire up pre-pooling recalculate button
