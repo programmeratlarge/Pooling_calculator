@@ -541,11 +541,26 @@ def build_app() -> gr.Blocks:
 
         /* Section headers */
         .gradio-container h2 {
-            color: #4a5568;
+            color: #000000;
             font-weight: 600;
             border-bottom: 2px solid #e2e8f0;
             padding-bottom: 0.5rem;
             margin-bottom: 1rem;
+        }
+
+        /* Make gray text black for better readability */
+        .gradio-container h3,
+        .gradio-container h4,
+        .gradio-container h5,
+        .gradio-container h6,
+        .gradio-container p,
+        .gradio-container label,
+        .gradio-container span:not([class*="white"]),
+        .gradio-container .prose,
+        .gradio-container [class*="info"],
+        .gradio-container [class*="label-text"],
+        .gradio-container [class*="secondary-text"] {
+            color: #000000 !important;
         }
 
         /* Card-like containers */
